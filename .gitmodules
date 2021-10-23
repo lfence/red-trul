@@ -1,0 +1,3 @@
+[submodule "flac2mp3"]
+	path = flac2mp3
+	url = https://github.com/robinbowes/flac2mp3/
