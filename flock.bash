@@ -1,7 +1,6 @@
 #!/bin/bash
 # This is a wrapper script that will queue up pending runs so that ongoing ones
 # must finish before continuing.
-cd "`dirname "$0"`"
 
 LOCKFILE="`basename $0`.lock"
 TIMEOUT=3600
@@ -16,5 +15,5 @@ if ! flock -x -w $TIMEOUT $FD; then
   exit 1
 else
   echo [+] flock: our turn to go!
-  ./red-cul.js "$@"
+  `dirname $(realpath "$0")`/red-cul.js "$@"
 fi
