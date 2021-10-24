@@ -443,7 +443,7 @@ async function main(inputDir) {
   const origin = await getOrigin(`${inputDir}/origin.yaml`)
 
   if (origin.format !== "FLAC") {
-    console.log("not a flac, not interested")
+    console.log("[-] Not a flac, not interested")
     return
   }
 

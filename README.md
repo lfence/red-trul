@@ -1,11 +1,17 @@
 # red-cul: RED Convert UpLoad
 This little utility 
-- Takes one or more directories of as input
-- Uses an [origin.yml](https://github.com/x1ppy/gazelle-origin) file in each input directory to find the release at RED.
-- Transcodes any missing formats at RED into FLAC (for 24-bit lossess), V0 and 320.
+- Takes one or more directories of as input. Inputs without any 
+  [origin.yml](https://github.com/x1ppy/gazelle-origin) file or that are not flac
+  are ignored.
+- Detects the edition group at RED and transcodes any missing formats FLAC (for 24-bit lossess inputs), V0 and 320.
 - Creates the torrent files and uploads to RED. 
 
-[Gazelle-origin](https://github.com/x1ppy/gazelle-origin) is currently required.
+[Gazelle-origin](https://github.com/x1ppy/gazelle-origin) is currently required.  
+
+*The tool tries to not break any rules, for example by avoiding inputs with
+missing or bad tagging but the user of this tool is liable for her own uploads,
+as always.*
+
 
 ## Installing
 
@@ -43,13 +49,13 @@ Options:
   -h, --help           Show help                                       [boolean]
 ```
 
-`flock.sh` is provided to avoid running multiple instances of red-cul, but queue
+`flock.bash` is provided to avoid running multiple instances of red-cul, but queue
 up jobs instead.
 
 ## Example toolchain
 
 Have rtorrent do two things:
- - Run a `postdl.bash` script that runs `gazelle-origin` and `red-cul` (through `flock.sh`)
+ - Run a `postdl.bash` script that runs `gazelle-origin` and `red-cul` (through `flock.bash`)
  - Monitor a directory for new torrents to add 
 
 Some of this information comes from [gazelle-origin](https://github.com/x1ppy/gazelle-origin).
@@ -74,7 +80,7 @@ BASE_PATH=$1
 INFO_HASH=$2
 SESSION_PATH=$3
 
-REDCUL_PATH=/some/path/red-cul/flock.sh
+REDCUL_PATH=/some/path/red-cul/flock.bash
 GAZELLEORIGIN_PATH=/some/path
 TRANSCODE_DIR=/home/lfen/my_music
 # NOTE this matches with .rtorrent.rc watch dir
@@ -87,13 +93,6 @@ if ! grep flacsfor.me "$SESSION_PATH/$INFO_HASH.torrent"; then
 fi
 
 $GAZELLEORIGIN_PATH -o "$BASE_PATH/origin.yaml" $INFO_HASH
-
-# optional step. red-cul wont transcode anything that isn't flac
-FORMAT=$(grep -Po 'Format: *\K.*' "$BASE_PATH/origin.yaml")
-if ! [[ $FORMAT == "FLAC" ]]; then
-  # Not a FLAC release.
-  exit 0
-fi
 
 $REDCUL_PATH \
   --announce=$ANNOUNCE_URL \
