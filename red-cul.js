@@ -141,6 +141,8 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
     await fs.promises.mkdir(outDir)
   } catch (err) {
     if (err.code !== "EEXIST") {
+      // output directory must not exist already. there's a risk, if transcoding
+      // flac24->flac16 that the folder have the same name.
       throw err
     }
   }
@@ -158,7 +160,7 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
         )
       }
     } else {
-      console.log(`Transcoding ${file}...`)
+      console.log(`[-] Transcoding ${file}...`)
       await execFile("sox", [
         "--multi-threaded",
         "--buffer=131072",
