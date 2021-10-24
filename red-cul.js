@@ -371,9 +371,34 @@ function requiredTagsPresent(probeInfos) {
   })
 }
 
+async function computeTargetSize(basePath) {
+  const files = [basePath]
+  let total = 0
+  while (files.length > 0) {
+    const path = files.pop()
+    const stats = await fs.promises.lstat(path)
+    total += stats.size
+
+    if (stats.isDirectory()) {
+      const paths = await fs.promises.readdir(path)
+      files.push(...paths)
+    }
+  }
+  return total
+}
+
 async function mktorrent(targetDir, torrentPath) {
+  // > a torrent should have around 1000-1500 pieces.
+  // https://wiki.vuze.com/w/Torrent_Piece_Size
+  // so we try to get such an amonut of pieces, however, 2**15 is minimum and
+  // and 2**28 is max
+  const sz = await computeTargetSize(targetDir)
+  const pieceLength = Math.max(
+    15,
+    Math.min(28, Math.round(Math.log2(sz / 1280)))
+  )
   return execFile(`mktorrent`, [
-    "--piece-length=20", // 1MiB chunk size
+    `--piece-length=${pieceLength}`,
     "--private",
     "--source=RED",
     `--announce=${ANNOUNCE_URL}`,

@@ -15,7 +15,7 @@ sudo apt install flac lame sox ffmpeg mktorrent
 git clone https://github.com/lfence/red-cul 
 cd red-cul
 # clones flac2mp3 sub repo
-git submodule update --init --recursive
+git submodule update --init --recursive .
 # Remove unsync behavior for ancient (pre-id3) mp3 players. 
 # Fixes a bug with multibyte characters in id3v23 tags.
 sed -i '/use MP3::Tag;/aMP3::Tag->config(id3v23_unsync => 0);' flac2mp3/flac2mp3.pl
