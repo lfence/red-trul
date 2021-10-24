@@ -9,62 +9,66 @@ const _execFile = require("child_process").execFile
 const pkg = require("./package.json")
 const BIN_PATH = `${process.env.HOME}/.local/bin`
 const FormData = require("form-data")
-const yargs = require('yargs');
+const yargs = require("yargs")
 
-const argv = yargs.usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
+const argv = yargs
+  .usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
 
-.option("api-key", {
-  describe: "API token with Torrents capability. Can definable in env as RED_API_KEY",
-}).option("announce", {
-  alias: "a",
-  describe: "Specify the full announce URL found on https://redacted.ch/upload.php",
-  demandOption: true,
-  // maybe we can retrieve this from the api instead.
-})
+  .option("api-key", {
+    describe:
+      "API token with Torrents capability. Can definable in env as RED_API_KEY",
+  })
+  .option("announce", {
+    alias: "a",
+    describe:
+      "Specify the full announce URL found on https://redacted.ch/upload.php",
+    demandOption: true,
+    // maybe we can retrieve this from the api instead.
+  })
   .option("transcode-dir", {
-  alias: "t",
-  describe: "Output directory of transcodes (e.g. ~/my_music)",
-  default: process.env.HOME || process.env.HOMEPATH,
-  demandOption: true, // TODO: same dir as input by default
-}).option("torrent-dir", {
-  alias: "o",
-  describe: "Where to output torrent files",
-  default: process.env.HOME || process.env.HOMEPATH,
-  demandOption: true
-}).help('h').alias('h','help').argv
+    alias: "t",
+    describe: "Output directory of transcodes (e.g. ~/my_music)",
+    default: process.env.HOME || process.env.HOMEPATH,
+    demandOption: true, // TODO: same dir as input by default
+  })
+  .option("torrent-dir", {
+    alias: "o",
+    describe: "Where to output torrent files",
+    default: process.env.HOME || process.env.HOMEPATH,
+    demandOption: true,
+  })
+  .help("h")
+  .alias("h", "help").argv
 
 const nproc = os.cpus().length
 
 const RED_API = process.env.RED_API || "https://redacted.ch/ajax.php"
 
 // API_KEY requires 'Torrents' permission.
-const API_KEY = argv['api-key'] || process.env.RED_API_KEY
+const API_KEY = argv["api-key"] || process.env.RED_API_KEY
 if (!API_KEY) {
   console.error("Missing required argument '--api-key'")
   process.exit(1)
 }
 
-const ANNOUNCE_URL = argv['announce'];
+const ANNOUNCE_URL = argv["announce"]
 
 // Transcodes end here
-const TRANSCODE_DIR = argv['transcode-dir']
+const TRANSCODE_DIR = argv["transcode-dir"]
 if (!fs.statSync(TRANSCODE_DIR, { throwIfNoEntry: false })) {
-  console.error(
-    `${TRANSCODE_DIR} does not exist! Please create it.`
-  )
+  console.error(`${TRANSCODE_DIR} does not exist! Please create it.`)
   process.exit(1)
 }
 
 // Ready torrents end here (rtorrent watches this dir and auto adds torrents)
-const TORRENT_DIR = argv['torrent-dir']
+const TORRENT_DIR = argv["torrent-dir"]
 if (!fs.statSync(TORRENT_DIR, { throwIfNoEntry: false })) {
-  console.error(
-    `${TORRENT_DIR} does not exist! Please create it.`
-  )
+  console.error(`${TORRENT_DIR} does not exist! Please create it.`)
   process.exit(1)
 }
 
-const FLAC2MP3_PATH = process.env.FLAC2MP3 || `${__dirname}/flac2mp3/flac2mp3.pl`
+const FLAC2MP3_PATH =
+  process.env.FLAC2MP3 || `${__dirname}/flac2mp3/flac2mp3.pl`
 
 const HTTP_AUTHZ_HEADERS = {
   Authorization: API_KEY,
@@ -173,12 +177,21 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
   await copyOtherFiles(inDir, outDir)
   return {
     method: `sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
+    outDir,
+    format: "FLAC",
+    bitrate: "Lossless",
   }
 }
 
-async function makeMp3Transcode(outDir, inDir, preset) {
-  console.log("[-] Transcoding", preset)
+const bitratePreset = {
+  "V0 (VBR)": "V0",
+  320: "320",
+}
 
+async function makeMp3Transcode(outDir, inDir, bitrate) {
+  console.log("[-] Transcoding", bitrate)
+
+  const preset = bitratePreset[bitrate]
   await execFile(FLAC2MP3_PATH, [
     `--preset=${preset}`,
     `--processes=${nproc}`,
@@ -188,6 +201,9 @@ async function makeMp3Transcode(outDir, inDir, preset) {
   await copyOtherFiles(inDir, outDir)
   return {
     method: `flac2mp3 --preset=${preset}`,
+    outDir,
+    format: "MP3",
+    bitrate,
   }
 }
 
@@ -357,12 +373,12 @@ function requiredTagsPresent(probeInfos) {
 
 async function mktorrent(targetDir, torrentPath) {
   return execFile(`mktorrent`, [
-    '--piece-length=20', // 1MiB chunk size
-    '--private',
-    '--source=RED',
+    "--piece-length=20", // 1MiB chunk size
+    "--private",
+    "--source=RED",
     `--announce=${ANNOUNCE_URL}`,
     targetDir,
-    `--output=${torrentPath}`
+    `--output=${torrentPath}`,
   ])
 }
 
@@ -424,77 +440,68 @@ async function main(inputDir) {
   }
   outputDirBase += ` - ${origin.media}`
 
-  // torrents will be put in a temp directory before uploading,
-  // after uploading they will be moved
-  let filesToMove = []
+  const shouldMakeFLAC = function shouldMakeFLAC() {
+    if (origin.encoding !== "24bit Lossless") {
+      return false
+    }
 
-  const hasFLAC16 = editionGroup.some(
-    (torrent) => torrent.encoding === "Lossless"
-  )
-  const originIsFLAC24 = origin.encoding === "24bit Lossless"
-  if (!hasFLAC16 && originIsFLAC24) {
-    const outputDir = `${outputDirBase} FLAC`
+    if (editionGroup.some((torrent) => torrent.encoding === "Lossless")) {
+      return false
+    }
 
-    const badBitRate = probeInfos.filter(
-      (probeInfo) => getBitrate(probeInfo) !== 24
-    )
+    const badBitRate = probeInfos.map(getBitrate).filter((b) => b !== 24)
     if (badBitRate.length > 0) {
       console.error(
-        `These are not 24bit flac. Found ${badBitRate
-          .map(getBitrate)
-          .join(",")}-bit too. Won't transcode this to flac16`
+        `[!] These are not 24bit flac. Found ${badBitRate.join(
+          ","
+        )}-bit too. Won't transcode this to flac16`
       )
-    } else {
-      const inputSampleRate = getConsistentSampleRate(probeInfos)
-      if (!inputSampleRate) {
-        console.error(`[!] Inconsistent sample rate! check ${inputDir}`)
-      } else {
-        const sampleRate = inputSampleRate % 48000 === 0 ? 48000 : 44100
-        const { method } = await makeFlacTranscode(
-          outputDir,
-          inputDir,
-          sampleRate
-        )
-
-        const torrentName = `${path.basename(outputDir)}.torrent`
-        const torrentPath = path.join(TORRENT_DIR, torrentName)
-
-        // use tempPath while uploading, if torrentDir is watched by rtorrent,
-        // the file will be reomved before we uploaded.
-        const tmpPath = path.join(os.tmpdir(), torrentName)
-        await mktorrent(outputDir, tempPath)
-        filesToMove.push([ tmpPath, torrentPath ])
-        files.push({
-          format: "FLAC",
-          bitrate: "Lossless",
-          torrentPath: tmpPath,
-          release_desc: `${releaseDescBase} Method: ${method}`,
-        })
-      }
+      return false
     }
+
+    return true
   }
 
-  for (const [preset, bitrate] of [
-    ["V0", "V0 (VBR)"],
-    ["320", "320"],
-  ]) {
-    if (!editionGroup.some((torrent) => torrent.encoding === bitrate)) {
-      const outputDir = `${outputDirBase} ${preset}`
-      const { method } = await makeMp3Transcode(outputDir, inputDir, preset)
-
-      const torrentName = `${path.basename(outputDir)}.torrent`
-      const torrentPath = path.join(TORRENT_DIR, torrentName)
-
-      const tmpPath = path.join(os.tmpdir(), torrentName)
-      await mktorrent(outputDir, tmpPath)
-      filesToMove.push([ tmpPath, torrentPath ])
-      files.push({
-        format: "MP3",
-        bitrate,
-        torrentPath: tmpPath,
-        release_desc: `${releaseDescBase} Method: ${method}`,
-      })
+  // torrents will be put in a temp directory before uploading,
+  // after uploading they will be moved
+  const filesToMove = []
+  const tasks = []
+  if (shouldMakeFLAC()) {
+    const inputSampleRate = getConsistentSampleRate(probeInfos)
+    if (!inputSampleRate) {
+      console.error(`[!] Inconsistent sample rate! check ${inputDir}`)
+    } else {
+      tasks.push(() =>
+        makeFlacTranscode(
+          `${outputDirBase} FLAC`,
+          inputDir,
+          inputSampleRate % 48000 === 0 ? 48000 : 44100
+        )
+      )
     }
+  }
+  if (!editionGroup.some((torrent) => torrent.encoding === "V0 (VBR)")) {
+    tasks.push(() =>
+      makeMp3Transcode(`${outputDirBase} V0`, inputDir, "V0 (VBR)")
+    )
+  }
+  if (!editionGroup.some((torrent) => torrent.encoding === "320")) {
+    tasks.push(() => makeMp3Transcode(`${outputDirBase} 320`, inputDir, "320"))
+  }
+
+  for (const doTranscode of tasks) {
+    const { outDir, method, format, bitrate } = await doTranscode()
+    const torrentName = `${path.basename(outDir)}.torrent`
+    const torrentPath = path.join(TORRENT_DIR, torrentName)
+    const tmpPath = path.join(os.tmpdir(), torrentName)
+    await mktorrent(outDir, tmpPath)
+    filesToMove.push([tmpPath, torrentPath])
+    files.push({
+      format,
+      bitrate,
+      torrentPath: tmpPath,
+      release_desc: `${releaseDescBase} Method: ${method}`,
+    })
   }
 
   if (files.length === 0) {
@@ -538,9 +545,7 @@ async function main(inputDir) {
 
   const data = await upload(uploadOpts)
   await Promise.all(
-    filesToMove.map(
-      ([src, dst]) => fs.promises.rename(src, dst)
-    )
+    filesToMove.map(([src, dst]) => fs.promises.rename(src, dst))
   )
   console.log("[*] Done!")
 }
