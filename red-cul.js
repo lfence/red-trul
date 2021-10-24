@@ -18,6 +18,10 @@ const argv = yargs
     describe:
       "API token with Torrents capability. Can definable in env as RED_API_KEY",
   })
+  .option("verbose", {
+    boolean: true,
+    describe: "Print more",
+  })
   .option("announce", {
     alias: "a",
     describe:
@@ -43,6 +47,8 @@ const argv = yargs
 const nproc = os.cpus().length
 
 const RED_API = process.env.RED_API || "https://redacted.ch/ajax.php"
+
+const VERBOSE = argv["verbose"]
 
 // API_KEY requires 'Torrents' permission.
 const API_KEY = argv["api-key"] || process.env.RED_API_KEY
@@ -98,7 +104,7 @@ function execFile(cmd, args, mute) {
     })
     childProc.stderr.on("data", (d) => {
       stderr += d
-      if (mute) return
+      if (!VERBOSE) return
       process.stderr.write(prefixErr + d)
     })
     childProc.on("exit", (code) => {
@@ -266,8 +272,11 @@ async function upload(opts) {
       }
     }
   }
-  const { extra_file_1, extra_file_2, file_input, ...rest } = opts
-  console.log(rest)
+
+  if (VERBOSE) {
+    const { extra_file_1, extra_file_2, file_input, ...rest } = opts
+    console.log(rest)
+  }
 
   const resp = await axios.post(`${RED_API}?action=upload`, form, {
     headers: {
