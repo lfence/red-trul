@@ -119,6 +119,9 @@ const sanitizeFilename = (filename) =>
 
 function execFile(cmd, args, mute) {
   return new Promise((resolve, reject) => {
+    if (VERBOSE) {
+      console.log(`[-] execFile: ${cmd} ${args.join(" ")}`)
+    }
     const childProc = _execFile(cmd, args)
     const prefix = `>> [${childProc.pid}] `
     const prefixErr = `!! [${childProc.pid}] `
@@ -218,7 +221,8 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
   }
 }
 
-async function makeMp3Transcode(outDir, inDir, preset) {
+async function makeMp3Transcode(outDir, inDir, bitrate) {
+  const preset = MP3_PRESETS[bitrate]
   console.log("[-] Transcoding", preset)
 
   await execFile(FLAC2MP3_PATH, [
@@ -404,16 +408,16 @@ function requiredTagsPresent(probeInfos) {
 }
 
 async function computeTargetSize(basePath) {
-  const files = [basePath]
+  const paths = [basePath]
   let total = 0
-  while (files.length > 0) {
-    const path = files.pop()
-    const stats = await fs.promises.lstat(path)
+  while (paths.length > 0) {
+    const p = paths.pop()
+    const stats = await fs.promises.lstat(p)
     total += stats.size
 
     if (stats.isDirectory()) {
-      const paths = await fs.promises.readdir(path)
-      files.push(...paths)
+      const fnames = await fs.promises.readdir(p)
+      paths.push(...fnames.map(f => path.join(p, f)))
     }
   }
   return total
@@ -538,10 +542,10 @@ async function main(inputDir) {
     }
   }
 
-  for (const [encoding, preset] of MP3_PRESETS) {
+  for (const [encoding, preset] of Object.entries(MP3_PRESETS)) {
     if (!editionGroup.some((torrent) => torrent.encoding === encoding)) {
       tasks.push(() =>
-        makeMp3Transcode(`${outputDirBase} ${preset}`, inputDir, preset)
+        makeMp3Transcode(`${outputDirBase} ${preset}`, inputDir, encoding)
       )
     }
   }
