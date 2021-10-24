@@ -66,7 +66,7 @@ if (argv["no-v0"]) {
   delete MP3_PRESETS["V0 (VBR)"]
 }
 
-if (argv["no-v0"]) {
+if (argv["no-320"]) {
   if (VERBOSE) {
     console.log("[-] Won't transcode 320")
   }
