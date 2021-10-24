@@ -13,7 +13,6 @@ const yargs = require("yargs")
 
 const argv = yargs
   .usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
-
   .option("api-key", {
     describe:
       "API token with Torrents capability. Can definable in env as RED_API_KEY",
@@ -41,14 +40,42 @@ const argv = yargs
     default: process.env.HOME || process.env.HOMEPATH,
     demandOption: true,
   })
+  .option("no-v0", {
+    describe: "Don't transcode into V0",
+    boolean: true,
+  })
+  .option("no-320", {
+    describe: "Don't transcode into 320",
+    boolean: true,
+  })
   .help("h")
   .alias("h", "help").argv
+
+const VERBOSE = argv["verbose"]
+
+// supported presets <encoding,flac2mp3_preset>
+const MP3_PRESETS = {
+  "V0 (VBR)": "V0",
+  320: "320",
+}
+
+if (argv["no-v0"]) {
+  if (VERBOSE) {
+    console.log("[-] Won't transcode V0")
+  }
+  delete MP3_PRESETS["V0 (VBR)"]
+}
+
+if (argv["no-v0"]) {
+  if (VERBOSE) {
+    console.log("[-] Won't transcode 320")
+  }
+  delete MP3_PRESETS["320"]
+}
 
 const nproc = os.cpus().length
 
 const RED_API = process.env.RED_API || "https://redacted.ch/ajax.php"
-
-const VERBOSE = argv["verbose"]
 
 // API_KEY requires 'Torrents' permission.
 const API_KEY = argv["api-key"] || process.env.RED_API_KEY
@@ -191,15 +218,9 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
   }
 }
 
-const bitratePreset = {
-  "V0 (VBR)": "V0",
-  320: "320",
-}
+async function makeMp3Transcode(outDir, inDir, preset) {
+  console.log("[-] Transcoding", preset)
 
-async function makeMp3Transcode(outDir, inDir, bitrate) {
-  console.log("[-] Transcoding", bitrate)
-
-  const preset = bitratePreset[bitrate]
   await execFile(FLAC2MP3_PATH, [
     `--preset=${preset}`,
     `--processes=${nproc}`,
@@ -516,13 +537,13 @@ async function main(inputDir) {
       )
     }
   }
-  if (!editionGroup.some((torrent) => torrent.encoding === "V0 (VBR)")) {
-    tasks.push(() =>
-      makeMp3Transcode(`${outputDirBase} V0`, inputDir, "V0 (VBR)")
-    )
-  }
-  if (!editionGroup.some((torrent) => torrent.encoding === "320")) {
-    tasks.push(() => makeMp3Transcode(`${outputDirBase} 320`, inputDir, "320"))
+
+  for (const [encoding, preset] of MP3_PRESETS) {
+    if (!editionGroup.some((torrent) => torrent.encoding === encoding)) {
+      tasks.push(() =>
+        makeMp3Transcode(`${outputDirBase} ${preset}`, inputDir, preset)
+      )
+    }
   }
 
   for (const doTranscode of tasks) {

@@ -23,6 +23,7 @@ npm install
 ```
 
 ## Usage
+
 ```
 Usage: red-cul.js [OPTIONS] flac-dir [flac-dir2, [...]]
 
@@ -30,12 +31,15 @@ Options:
       --version        Show version number                             [boolean]
       --api-key        API token with Torrents capability. Can definable in env
                        as RED_API_KEY
+      --verbose        Print more                                      [boolean]
   -a, --announce       Specify the full announce URL found on
                        https://redacted.ch/upload.php                 [required]
   -t, --transcode-dir  Output directory of transcodes (e.g. ~/my_music)
                                               [required] [default: "/home/lfen"]
   -o, --torrent-dir    Where to output torrent files
                                               [required] [default: "/home/lfen"]
+      --no-v0          Don't transcode into V0                         [boolean]
+      --no-320         Don't transcode into 320                        [boolean]
   -h, --help           Show help                                       [boolean]
 ```
 
