@@ -3,11 +3,13 @@ const yaml = require("yaml")
 const fs = require("fs")
 const path = require("path")
 const os = require("os")
+const pkg = require("./package.json")
 const _execFile = require("child_process").execFile
-const BIN_PATH = `${process.env.HOME}/.local/bin`
 const yargs = require("yargs")
 
 const initApi = require("./red-api")
+
+const createTorrent = require("util").promisify(require("create-torrent"))
 
 const argv = yargs
   .usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
@@ -301,47 +303,6 @@ function getConsistentSampleRate(probeInfos) {
   return currentRate
 }
 
-function requiredTagsPresent(probeInfos) {
-  return probeInfos.some((pi) => {
-    // ffprobe bad. tags are lowercased at random.
-    const tags = Object.keys(pi.format.tags).map((key) => key.toUpperCase())
-    return ["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))
-  })
-}
-
-async function computeTargetSize(basePath) {
-  const paths = [basePath]
-  let total = 0
-  while (paths.length > 0) {
-    const p = paths.pop()
-    const stats = await fs.promises.lstat(p)
-    total += stats.size
-
-    if (stats.isDirectory()) {
-      const fnames = await fs.promises.readdir(p)
-      paths.push(...fnames.map((f) => path.join(p, f)))
-    }
-  }
-  return total
-}
-
-async function mktorrent(targetDir, torrentPath) {
-  const sz = await computeTargetSize(targetDir)
-  // a torrent should have around 1000-1500 pieces.
-  const pieceLength = Math.max(
-    15,
-    Math.min(28, Math.round(Math.log2(sz >> 10)))
-  )
-  return execFile(`mktorrent`, [
-    `--piece-length=${pieceLength}`,
-    "--private",
-    "--source=RED",
-    `--announce=${ANNOUNCE_URL}`,
-    targetDir,
-    `--output=${torrentPath}`,
-  ])
-}
-
 async function main(inDir) {
   const origin = await getOrigin(`${inDir}/origin.yaml`)
 
@@ -372,6 +333,10 @@ async function main(inDir) {
     remasterRecordLabel: origin.recordLabel,
   }
   console.log("[-] permalink:", origin.permalink)
+  console.log(
+    "[-] link:",
+    `https://redacted.ch/torrents.php?id=${torrentGroup.group.id}`
+  )
 
   const editionGroup = torrentGroup.torrents.filter(
     filterSameEditionGroupAs(editionInfo)
@@ -385,13 +350,16 @@ async function main(inDir) {
       .map(probeMediaFile)
   )
 
-  if (!requiredTagsPresent(probeInfos)) {
+  const okTags = probeInfos.some((pi) => {
+    const tags = Object.keys(pi.format.tags).map((key) => key.toUpperCase())
+    return ["TITLE", "ARTIST", "ALBUM", "TRACK"].every(tags.includes)
+  })
+
+  if (!okTags) {
     console.error(`[!] Required tags are not present! check ${inDir}`)
     return
   }
   console.log("[+] Required tags are present, would transcode this")
-
-  const files = []
 
   // will make dirs for FLAC, V0 and 320 transcodes using this as base
   let outputDirBase = `${
@@ -433,7 +401,6 @@ async function main(inDir) {
 
   // torrents will be put in a temp directory before uploading,
   // after uploading they will be moved
-  const filesToMove = []
   const tasks = []
   if (shouldMakeFLAC()) {
     const inputSampleRate = getConsistentSampleRate(probeInfos)
@@ -441,11 +408,11 @@ async function main(inDir) {
       console.error(`[!] Inconsistent sample rate! check ${inDir}`)
     } else {
       const outDir = `${outputDirBase} FLAC`
-      const outSampleRate = inputSampleRate % 48000 === 0 ? 48000 : 44100
+      const sampleRate = inputSampleRate % 48000 === 0 ? 48000 : 44100
       tasks.push({
         inDir,
         outDir,
-        doTranscode: () => makeFlacTranscode(outDir, inDir, outSampleRate),
+        doTranscode: () => makeFlacTranscode(outDir, inDir, sampleRate),
         message: `Source: ${origin.permalink}. Method: sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
         format: "FLAC",
         bitrate: "Lossless",
@@ -459,31 +426,40 @@ async function main(inDir) {
       continue
     }
     const outDir = `${outputDirBase} ${preset}`
-    const args = [`--preset=${preset}`, `--processes=${nproc}`, inDir, outDir]
     tasks.push({
       inDir,
       outDir,
-      doTranscode: () => execFile(FLAC2MP3_PATH, args),
+      doTranscode: () =>
+        execFile(FLAC2MP3_PATH, [
+          "--quiet",
+          `--preset=${preset}`,
+          `--processes=${nproc}`,
+          inDir,
+          outDir,
+        ]),
       message: `Source: ${origin.permalink}. Method: flac2mp3 --preset=${preset}`,
       format: "MP3",
       bitrate: encoding,
     })
   }
 
-  for (const { inDir, outDir, doTranscode, message, format, bitrate } of tasks) {
-    console.log(`[-] ${inDir} => ${outDir}`)
+  const files = []
+  for (const t of tasks) {
+    const { inDir, outDir, doTranscode, message, format, bitrate } = t
+    console.log(`[-] ${format} Transcode ${outDir}`)
     await doTranscode()
     await copyOtherFiles(inDir, outDir)
-    const torrentName = `${path.basename(outDir)}.torrent`
-    const torrentPath = path.join(TORRENT_DIR, torrentName)
-    const tmpPath = path.join(os.tmpdir(), torrentName)
-    await mktorrent(outDir, tmpPath, true)
-    filesToMove.push([tmpPath, torrentPath])
+    const torrent = await createTorrent(outDir, {
+      private: true,
+      createdBy: `${pkg.name}@${pkg.version}`,
+      announceList: [ANNOUNCE_URL],
+      info: { source: "RED" },
+    })
     files.push({
       format,
       bitrate,
-      torrentPath: tmpPath,
       release_desc: message,
+      file_input: torrent,
     })
   }
 
@@ -492,43 +468,41 @@ async function main(inDir) {
     return
   }
 
-  const { torrentPath, bitrate, format, release_desc } = files[0]
-
   const uploadOpts = {
-    groupid: torrentGroup.group.id,
     unknown: false, // can this be true?
+    scene: false,
+    groupid: torrentGroup.group.id,
     remaster_year: editionInfo.remasterYear,
     remaster_title: editionInfo.remasterTitle,
     remaster_record_label: editionInfo.remasterRecordLabel,
     remaster_catalogue_number: editionInfo.remasterCatalogueNumber,
-    scene: false,
-    media: origin.media,
-
-    file_input: fs.createReadStream(torrentPath),
-    bitrate,
-    format,
-    release_desc,
+    media: editionInfo.media,
+    ...files[0],
   }
 
   if (files[1]) {
-    const { torrentPath, bitrate, format, release_desc } = files[1]
-    uploadOpts.extra_file_1 = fs.createReadStream(torrentPath)
+    const { file_input, bitrate, format, release_desc } = files[1]
+    uploadOpts.extra_file_1 = file_input
     uploadOpts.extra_format = [format]
     uploadOpts.extra_bitrate = [bitrate]
     uploadOpts.extra_release_desc = [release_desc]
   }
 
   if (files[2]) {
-    const { torrentPath, bitrate, format, release_desc } = files[2]
-    uploadOpts.extra_file_2 = fs.createReadStream(torrentPath)
+    const { file_input, bitrate, format, release_desc } = files[2]
+    uploadOpts.extra_file_2 = file_input
     uploadOpts.extra_format.push(format)
     uploadOpts.extra_bitrate.push(bitrate)
     uploadOpts.extra_release_desc.push(release_desc)
   }
 
-  const data = await redAPI.upload(uploadOpts)
+  console.log("[-] Uploading...")
+  await redAPI.upload(uploadOpts)
+  console.log("[-] Write torrents...")
   await Promise.all(
-    filesToMove.map(([src, dst]) => fs.promises.rename(src, dst))
+    files.map(({ file_input }) =>
+      fs.promises.writeFile(`${TORRENT_DIR}/${Date.now()}.torrent`, file_input)
+    )
   )
   console.log("[*] Done!")
 }
