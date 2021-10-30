@@ -1,15 +1,13 @@
 #!/usr/bin/env node
-const axios = require("axios").default
 const yaml = require("yaml")
-const q = require("querystring")
 const fs = require("fs")
 const path = require("path")
 const os = require("os")
 const _execFile = require("child_process").execFile
-const pkg = require("./package.json")
 const BIN_PATH = `${process.env.HOME}/.local/bin`
-const FormData = require("form-data")
 const yargs = require("yargs")
+
+const initApi = require("./red-api")
 
 const argv = yargs
   .usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
@@ -70,14 +68,14 @@ if (argv["no-320"]) {
 
 const nproc = os.cpus().length
 
-const RED_API = process.env.RED_API || "https://redacted.ch/ajax.php"
-
 // API_KEY requires 'Torrents' permission.
 const API_KEY = argv["api-key"] || process.env.RED_API_KEY
 if (!API_KEY) {
   console.error("Missing required argument '--api-key'")
   process.exit(1)
 }
+
+const redAPI = initApi(API_KEY)
 
 // Will set it if unset
 let ANNOUNCE_URL = argv["announce"]
@@ -98,11 +96,6 @@ if (!fs.statSync(TORRENT_DIR, { throwIfNoEntry: false })) {
 
 const FLAC2MP3_PATH =
   process.env.FLAC2MP3 || `${__dirname}/flac2mp3/flac2mp3.pl`
-
-const HTTP_AUTHZ_HEADERS = {
-  Authorization: API_KEY,
-  "user-agent": `${pkg.name}@${pkg.version}`,
-}
 
 const sanitizeFilename = (filename) =>
   filename
@@ -168,7 +161,6 @@ async function copyOtherFiles(inDir, outDir) {
 }
 
 async function makeFlacTranscode(outDir, inDir, sampleRate) {
-  console.log(`[-] FLAC transcode ${inDir} -> ${outDir}`)
   try {
     await fs.promises.mkdir(outDir)
   } catch (err) {
@@ -193,46 +185,24 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
       }
     } else {
       console.log(`[-] Transcoding ${file}...`)
-      await execFile("sox", [
-        "--multi-threaded",
-        "--buffer=131072",
-        "-G",
-        `${inDir}/${file}`,
-        "-b16",
-        `${outDir}/${file}`,
-        "rate",
-        "-v",
-        "-L",
-        `${sampleRate}`,
-        "dither",
-      ])
+      await execFile(
+        "sox",
+        [
+          "--multi-threaded",
+          "--buffer=131072",
+          "-G",
+          `${inDir}/${file}`,
+          "-b16",
+          `${outDir}/${file}`,
+          "rate",
+          "-v",
+          "-L",
+          `${sampleRate}`,
+          "dither",
+        ],
+        !VERBOSE
+      )
     }
-  }
-  await copyOtherFiles(inDir, outDir)
-  return {
-    method: `sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
-    outDir,
-    format: "FLAC",
-    bitrate: "Lossless",
-  }
-}
-
-async function makeMp3Transcode(outDir, inDir, bitrate) {
-  const preset = MP3_PRESETS[bitrate]
-  console.log("[-] Transcoding", preset)
-
-  await execFile(FLAC2MP3_PATH, [
-    `--preset=${preset}`,
-    `--processes=${nproc}`,
-    inDir,
-    outDir,
-  ])
-  await copyOtherFiles(inDir, outDir)
-  return {
-    method: `flac2mp3 --preset=${preset}`,
-    outDir,
-    format: "MP3",
-    bitrate,
   }
 }
 
@@ -258,71 +228,6 @@ function getBitrate(probeInfo) {
     ({ codec_name }) => codec_name === "flac"
   )
   return Number.parseInt(flacStream.bits_per_raw_sample, 10)
-}
-
-async function index() {
-  const resp = await axios.get(`${RED_API}?action=index`, {
-    headers: HTTP_AUTHZ_HEADERS,
-  })
-
-  if (resp.data.status !== "success") {
-    throw new Error(`index: ${resp.data.status}`)
-  }
-
-  return resp.data.response
-}
-
-async function torrentgroup({ hash }) {
-  const resp = await axios.get(
-    `${RED_API}?${q.encode({
-      action: "torrentgroup",
-      hash,
-    })}`,
-    {
-      validateStatus: (status) => status < 500,
-      headers: HTTP_AUTHZ_HEADERS,
-    }
-  )
-
-  if (resp.data.status !== "success") {
-    throw new Error(`getTorrentGroup: ${resp.data.status}`)
-  }
-
-  return resp.data.response
-}
-
-async function upload(opts) {
-  const form = new FormData()
-
-  for (const [k, v] of Object.entries(opts)) {
-    if (v) {
-      if (Array.isArray(v)) {
-        for (const el of v) {
-          form.append(`${k}[]`, el)
-        }
-      } else {
-        form.append(k, v)
-      }
-    }
-  }
-
-  if (VERBOSE) {
-    const { extra_file_1, extra_file_2, file_input, ...rest } = opts
-    console.log(rest)
-  }
-
-  const resp = await axios.post(`${RED_API}?action=upload`, form, {
-    headers: {
-      ...HTTP_AUTHZ_HEADERS,
-      ...form.getHeaders(),
-    },
-  })
-
-  if (resp.data.status !== "success") {
-    throw new Error(`getTorrentGroup: ${resp.data.status}`)
-  }
-
-  return resp.data.response
 }
 
 const filterSameEditionGroupAs = ({
@@ -437,8 +342,8 @@ async function mktorrent(targetDir, torrentPath) {
   ])
 }
 
-async function main(inputDir) {
-  const origin = await getOrigin(`${inputDir}/origin.yaml`)
+async function main(inDir) {
+  const origin = await getOrigin(`${inDir}/origin.yaml`)
 
   if (origin.format !== "FLAC") {
     console.log("[-] Not a flac, not interested")
@@ -448,7 +353,7 @@ async function main(inputDir) {
   if (!ANNOUNCE_URL) {
     ANNOUNCE_URL = await (async () => {
       try {
-        const { passkey } = await index()
+        const { passkey } = await redAPI.index()
         return `https://flacsfor.me/${passkey}/announce`
       } catch (e) {
         console.error(`Can't GET ?action=index: ${e.message}`)
@@ -457,7 +362,7 @@ async function main(inputDir) {
     })()
   }
 
-  const torrentGroup = await torrentgroup({ hash: origin.infoHash })
+  const torrentGroup = await redAPI.torrentgroup({ hash: origin.infoHash })
 
   const editionInfo = {
     media: origin.media,
@@ -476,12 +381,12 @@ async function main(inputDir) {
     origin.files
       .map(({ Name }) => Name)
       .filter((name) => /\.flac$/.test(name))
-      .map((name) => `${inputDir}/${name}`)
+      .map((name) => `${inDir}/${name}`)
       .map(probeMediaFile)
   )
 
   if (!requiredTagsPresent(probeInfos)) {
-    console.error(`[!] Required tags are not present! check ${inputDir}`)
+    console.error(`[!] Required tags are not present! check ${inDir}`)
     return
   }
   console.log("[+] Required tags are present, would transcode this")
@@ -490,7 +395,7 @@ async function main(inputDir) {
 
   // will make dirs for FLAC, V0 and 320 transcodes using this as base
   let outputDirBase = `${
-    TRANSCODE_DIR || path.dirname(inputDir)
+    TRANSCODE_DIR || path.dirname(inDir)
   }/${sanitizeFilename(`${origin.artist} - ${origin.name}`)}`
   const year = editionInfo.remasterYear || origin.originalYear
   if (editionInfo.remasterTitle) {
@@ -533,38 +438,52 @@ async function main(inputDir) {
   if (shouldMakeFLAC()) {
     const inputSampleRate = getConsistentSampleRate(probeInfos)
     if (!inputSampleRate) {
-      console.error(`[!] Inconsistent sample rate! check ${inputDir}`)
+      console.error(`[!] Inconsistent sample rate! check ${inDir}`)
     } else {
-      tasks.push(() =>
-        makeFlacTranscode(
-          `${outputDirBase} FLAC`,
-          inputDir,
-          inputSampleRate % 48000 === 0 ? 48000 : 44100
-        )
-      )
+      const outDir = `${outputDirBase} FLAC`
+      const outSampleRate = inputSampleRate % 48000 === 0 ? 48000 : 44100
+      tasks.push({
+        inDir,
+        outDir,
+        doTranscode: () => makeFlacTranscode(outDir, inDir, outSampleRate),
+        message: `Source: ${origin.permalink}. Method: sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
+        format: "FLAC",
+        bitrate: "Lossless",
+      })
     }
   }
 
   for (const [encoding, preset] of Object.entries(MP3_PRESETS)) {
-    if (!editionGroup.some((torrent) => torrent.encoding === encoding)) {
-      tasks.push(() =>
-        makeMp3Transcode(`${outputDirBase} ${preset}`, inputDir, encoding)
-      )
+    if (editionGroup.some((torrent) => torrent.encoding === encoding)) {
+      // this encoding already available. no need to transcode
+      continue
     }
+    const outDir = `${outputDirBase} ${preset}`
+    const args = [`--preset=${preset}`, `--processes=${nproc}`, inDir, outDir]
+    tasks.push({
+      inDir,
+      outDir,
+      doTranscode: () => execFile(FLAC2MP3_PATH, args),
+      message: `Source: ${origin.permalink}. Method: flac2mp3 --preset=${preset}`,
+      format: "MP3",
+      bitrate: encoding,
+    })
   }
 
-  for (const doTranscode of tasks) {
-    const { outDir, method, format, bitrate } = await doTranscode()
+  for (const { inDir, outDir, doTranscode, message, format, bitrate } of tasks) {
+    console.log(`[-] ${inDir} => ${outDir}`)
+    await doTranscode()
+    await copyOtherFiles(inDir, outDir)
     const torrentName = `${path.basename(outDir)}.torrent`
     const torrentPath = path.join(TORRENT_DIR, torrentName)
     const tmpPath = path.join(os.tmpdir(), torrentName)
-    await mktorrent(outDir, tmpPath)
+    await mktorrent(outDir, tmpPath, true)
     filesToMove.push([tmpPath, torrentPath])
     files.push({
       format,
       bitrate,
       torrentPath: tmpPath,
-      release_desc: `Source: ${origin.permalink}. Method: ${method}`,
+      release_desc: message,
     })
   }
 
@@ -607,7 +526,7 @@ async function main(inputDir) {
     uploadOpts.extra_release_desc.push(release_desc)
   }
 
-  const data = await upload(uploadOpts)
+  const data = await redAPI.upload(uploadOpts)
   await Promise.all(
     filesToMove.map(([src, dst]) => fs.promises.rename(src, dst))
   )
