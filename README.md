@@ -17,7 +17,7 @@ as always.*
 
 ```bash
 # assuming node.js and git are installed
-sudo apt install flac lame sox ffmpeg mktorrent
+sudo apt install flac lame sox ffmpeg 
 git clone https://github.com/lfence/red-cul 
 cd red-cul
 # clones flac2mp3 sub repo
