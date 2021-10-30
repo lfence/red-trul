@@ -99,3 +99,23 @@ $REDCUL_PATH \
   --transcode-dir=$TRANSCODE_DIR \
   --torrent-dir=$TORRENT_DIR "$BASE_PATH" &
 ```
+
+## TODO
+
+Not finished, use red-better which is much more complete.
+
+- [x] Fetch passkey and create announce url
+- [x] Output results in sibling folder of input folder(s)
+- [ ] For flac: upload specrtogram
+- [ ] Make a nicer release info message (link to repo?)
+- [ ] Detect illegal (180 char file paths) remove edition, and media
+    from folder and bail if still too long.
+- [ ] Better logging.
+      - [*] Transcoded grouplink: http://
+      - [-] Problem
+- [ ] Maybe: ignore scene (ugly filenames, which include scene group)
+- [ ] Drop flac2mp3 and use sox + lame.
+- [/] Verify tags before UL.
+- [ ] Use config file (or envfile) and make all args optional
+- [ ] Use only info hash, allow opt out from gazelle-origin?
+- [ ] Support other tracker.

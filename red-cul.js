@@ -15,30 +15,21 @@ const argv = yargs
   .usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
   .option("api-key", {
     describe:
-      "API token with Torrents capability. Can definable in env as RED_API_KEY",
+      "API token with Torrents capability. Env definable as RED_API_KEY",
   })
-  .option("verbose", {
-    boolean: true,
-    describe: "Print more",
+  .option("torrent-dir", {
+    alias: "o",
+    describe: "Where to output torrent files",
+    default: ".",
   })
   .option("announce", {
     alias: "a",
     describe:
       "Specify the full announce URL found on https://redacted.ch/upload.php",
-    demandOption: true,
-    // maybe we can retrieve this from the api instead.
   })
   .option("transcode-dir", {
     alias: "t",
-    describe: "Output directory of transcodes (e.g. ~/my_music)",
-    default: process.env.HOME || process.env.HOMEPATH,
-    demandOption: true, // TODO: same dir as input by default
-  })
-  .option("torrent-dir", {
-    alias: "o",
-    describe: "Where to output torrent files",
-    default: process.env.HOME || process.env.HOMEPATH,
-    demandOption: true,
+    describe: "Output directory of transcodes",
   })
   .option("no-v0", {
     describe: "Don't transcode into V0",
@@ -47,6 +38,10 @@ const argv = yargs
   .option("no-320", {
     describe: "Don't transcode into 320",
     boolean: true,
+  })
+  .option("verbose", {
+    boolean: true,
+    describe: "Print more",
   })
   .help("h")
   .alias("h", "help").argv
@@ -84,11 +79,12 @@ if (!API_KEY) {
   process.exit(1)
 }
 
-const ANNOUNCE_URL = argv["announce"]
+// Will set it if unset
+let ANNOUNCE_URL = argv["announce"]
 
-// Transcodes end here
+// Transcodes end here. If unset they end up next to the input dir
 const TRANSCODE_DIR = argv["transcode-dir"]
-if (!fs.statSync(TRANSCODE_DIR, { throwIfNoEntry: false })) {
+if (TRANSCODE_DIR && !fs.statSync(TRANSCODE_DIR, { throwIfNoEntry: false })) {
   console.error(`${TRANSCODE_DIR} does not exist! Please create it.`)
   process.exit(1)
 }
@@ -264,6 +260,18 @@ function getBitrate(probeInfo) {
   return Number.parseInt(flacStream.bits_per_raw_sample, 10)
 }
 
+async function index() {
+  const resp = await axios.get(`${RED_API}?action=index`, {
+    headers: HTTP_AUTHZ_HEADERS,
+  })
+
+  if (resp.data.status !== "success") {
+    throw new Error(`index: ${resp.data.status}`)
+  }
+
+  return resp.data.response
+}
+
 async function torrentgroup({ hash }) {
   const resp = await axios.get(
     `${RED_API}?${q.encode({
@@ -390,18 +398,7 @@ function getConsistentSampleRate(probeInfos) {
 
 function requiredTagsPresent(probeInfos) {
   return probeInfos.some((pi) => {
-    // {
-    //             "TITLE": "Pointbreak",
-    //             "ARTIST": "Vanilla",
-    //             "DATE": "2021",
-    //             "COMMENT": "Visit https://vanillabeats.bandcamp.com",
-    //             "ALBUM": "Pointbreak",
-    //             "track": "1",
-    //             "album_artist": "Vanilla",
-    //             "ISRC": "USEAX2100015"
-    //         }
     // ffprobe bad. tags are lowercased at random.
-    // maybe use mediainfo instead.
     const tags = Object.keys(pi.format.tags).map((key) => key.toUpperCase())
     return ["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))
   })
@@ -417,21 +414,18 @@ async function computeTargetSize(basePath) {
 
     if (stats.isDirectory()) {
       const fnames = await fs.promises.readdir(p)
-      paths.push(...fnames.map(f => path.join(p, f)))
+      paths.push(...fnames.map((f) => path.join(p, f)))
     }
   }
   return total
 }
 
 async function mktorrent(targetDir, torrentPath) {
-  // > a torrent should have around 1000-1500 pieces.
-  // https://wiki.vuze.com/w/Torrent_Piece_Size
-  // so we try to get such an amonut of pieces, however, 2**15 is minimum and
-  // and 2**28 is max
   const sz = await computeTargetSize(targetDir)
+  // a torrent should have around 1000-1500 pieces.
   const pieceLength = Math.max(
     15,
-    Math.min(28, Math.round(Math.log2(sz / 1280)))
+    Math.min(28, Math.round(Math.log2(sz >> 10)))
   )
   return execFile(`mktorrent`, [
     `--piece-length=${pieceLength}`,
@@ -451,6 +445,18 @@ async function main(inputDir) {
     return
   }
 
+  if (!ANNOUNCE_URL) {
+    ANNOUNCE_URL = await (async () => {
+      try {
+        const { passkey } = await index()
+        return `https://flacsfor.me/${passkey}/announce`
+      } catch (e) {
+        console.error(`Can't GET ?action=index: ${e.message}`)
+        process.exit(1)
+      }
+    })()
+  }
+
   const torrentGroup = await torrentgroup({ hash: origin.infoHash })
 
   const editionInfo = {
@@ -460,9 +466,7 @@ async function main(inputDir) {
     remasterYear: origin.editionYear || origin.originalYear,
     remasterRecordLabel: origin.recordLabel,
   }
-  console.log("hash:", origin.infoHash)
-  console.log("permalink:", origin.permalink)
-  console.log(editionInfo)
+  console.log("[-] permalink:", origin.permalink)
 
   const editionGroup = torrentGroup.torrents.filter(
     filterSameEditionGroupAs(editionInfo)
@@ -483,12 +487,11 @@ async function main(inputDir) {
   console.log("[+] Required tags are present, would transcode this")
 
   const files = []
-  const releaseDescBase = `Source: ${origin.permalink}.`
 
   // will make dirs for FLAC, V0 and 320 transcodes using this as base
-  let outputDirBase = `${TRANSCODE_DIR}/${sanitizeFilename(
-    `${origin.artist} - ${origin.name}`
-  )}`
+  let outputDirBase = `${
+    TRANSCODE_DIR || path.dirname(inputDir)
+  }/${sanitizeFilename(`${origin.artist} - ${origin.name}`)}`
   const year = editionInfo.remasterYear || origin.originalYear
   if (editionInfo.remasterTitle) {
     // e.g., "Special Edition"
@@ -561,7 +564,7 @@ async function main(inputDir) {
       format,
       bitrate,
       torrentPath: tmpPath,
-      release_desc: `${releaseDescBase} Method: ${method}`,
+      release_desc: `Source: ${origin.permalink}. Method: ${method}`,
     })
   }
 
