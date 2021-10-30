@@ -35,17 +35,15 @@ Usage: red-cul.js [OPTIONS] flac-dir [flac-dir2, [...]]
 
 Options:
       --version        Show version number                             [boolean]
-      --api-key        API token with Torrents capability. Can definable in env
-                       as RED_API_KEY
-      --verbose        Print more                                      [boolean]
+      --api-key        API token with Torrents capability. Env definable as
+                       RED_API_KEY
+  -o, --torrent-dir    Where to output torrent files              [default: "."]
   -a, --announce       Specify the full announce URL found on
-                       https://redacted.ch/upload.php                 [required]
-  -t, --transcode-dir  Output directory of transcodes (e.g. ~/my_music)
-                                              [required] [default: "/home/lfen"]
-  -o, --torrent-dir    Where to output torrent files
-                                              [required] [default: "/home/lfen"]
+                       https://redacted.ch/upload.php
+  -t, --transcode-dir  Output directory of transcodes
       --no-v0          Don't transcode into V0                         [boolean]
       --no-320         Don't transcode into 320                        [boolean]
+      --verbose        Print more                                      [boolean]
   -h, --help           Show help                                       [boolean]
 ```
 
@@ -94,10 +92,7 @@ fi
 
 $GAZELLEORIGIN_PATH -o "$BASE_PATH/origin.yaml" $INFO_HASH
 
-$REDCUL_PATH \
-  --announce=$ANNOUNCE_URL \
-  --transcode-dir=$TRANSCODE_DIR \
-  --torrent-dir=$TORRENT_DIR "$BASE_PATH" &
+$REDCUL_PATH --torrent-dir=$TORRENT_DIR "$BASE_PATH" &
 ```
 
 ## TODO
