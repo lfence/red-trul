@@ -322,6 +322,7 @@ async function main(inDir) {
       }
     })()
   }
+  console.log(`[-] using announce: ${ANNOUNCE_URL}`)
 
   const torrentGroup = await redAPI.torrentgroup({ hash: origin.infoHash })
 
@@ -352,7 +353,7 @@ async function main(inDir) {
 
   const okTags = probeInfos.some((pi) => {
     const tags = Object.keys(pi.format.tags).map((key) => key.toUpperCase())
-    return ["TITLE", "ARTIST", "ALBUM", "TRACK"].every(tags.includes)
+    return ["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))
   })
 
   if (!okTags) {
@@ -446,7 +447,7 @@ async function main(inDir) {
   const files = []
   for (const t of tasks) {
     const { inDir, outDir, doTranscode, message, format, bitrate } = t
-    console.log(`[-] ${format} Transcode ${outDir}`)
+    console.log(`[-] Transcoding ${outDir}`)
     await doTranscode()
     await copyOtherFiles(inDir, outDir)
     const torrent = await createTorrent(outDir, {

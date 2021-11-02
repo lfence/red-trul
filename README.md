@@ -9,9 +9,8 @@ This little utility
 [Gazelle-origin](https://github.com/x1ppy/gazelle-origin) is currently required.  
 
 *The tool tries to not break any rules, for example by avoiding inputs with
-missing or bad tagging but the user of this tool is liable for her own uploads,
+missing or bad tagging, but the user of this tool is liable for her own uploads,
 as always.*
-
 
 ## Installing
 
