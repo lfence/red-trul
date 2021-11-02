@@ -453,14 +453,17 @@ async function main(inDir) {
     const torrent = await createTorrent(outDir, {
       private: true,
       createdBy: `${pkg.name}@${pkg.version}`,
-      announceList: [ANNOUNCE_URL],
+      announce: ANNOUNCE_URL,
       info: { source: "RED" },
     })
     files.push({
-      format,
-      bitrate,
-      release_desc: message,
-      file_input: torrent,
+      fileName: `${path.basename(outDir)}.torrent`,
+      postData: {
+	format,
+	bitrate,
+	release_desc: message,
+	file_input: torrent,
+      }
     })
   }
 
@@ -478,11 +481,11 @@ async function main(inDir) {
     remaster_record_label: editionInfo.remasterRecordLabel,
     remaster_catalogue_number: editionInfo.remasterCatalogueNumber,
     media: editionInfo.media,
-    ...files[0],
+    ...files[0].postData,
   }
 
   if (files[1]) {
-    const { file_input, bitrate, format, release_desc } = files[1]
+    const { file_input, bitrate, format, release_desc } = files[1].postData
     uploadOpts.extra_file_1 = file_input
     uploadOpts.extra_format = [format]
     uploadOpts.extra_bitrate = [bitrate]
@@ -490,7 +493,7 @@ async function main(inDir) {
   }
 
   if (files[2]) {
-    const { file_input, bitrate, format, release_desc } = files[2]
+    const { file_input, bitrate, format, release_desc } = files[2].postData
     uploadOpts.extra_file_2 = file_input
     uploadOpts.extra_format.push(format)
     uploadOpts.extra_bitrate.push(bitrate)
@@ -501,8 +504,8 @@ async function main(inDir) {
   await redAPI.upload(uploadOpts)
   console.log("[-] Write torrents...")
   await Promise.all(
-    files.map(({ file_input }) =>
-      fs.promises.writeFile(`${TORRENT_DIR}/${Date.now()}.torrent`, file_input)
+    files.map(({ fileName, postData }) =>
+      fs.promises.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input)
     )
   )
   console.log("[*] Done!")
