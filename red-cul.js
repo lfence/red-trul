@@ -149,7 +149,12 @@ async function copyOtherFiles(inDir, outDir) {
     if (!/\.(flac|mp3)$/.test(file)) {
       const stats = await fs.promises.lstat(`${inDir}/${file}`)
       if (stats.isDirectory()) {
-        await copyOtherFiles(`${inDir}/${file}`, `${outDir}/${file}`)
+        await fs.promises.mkdir(`${outDir}/${file}`)
+        const ncopied = await copyOtherFiles(`${inDir}/${file}`, `${outDir}/${file}`)
+        if (ncopied == 0) {
+          // directory is empty
+          await fs.promises.rmdir(`${outDir}/${file}`)
+        }
       }
     }
   }
@@ -159,7 +164,7 @@ async function copyOtherFiles(inDir, outDir) {
       .map((file) =>
         fs.promises.copyFile(`${inDir}/${file}`, `${outDir}/${file}`)
       )
-  )
+  ).then((n) => n.length)
 }
 
 async function makeFlacTranscode(outDir, inDir, sampleRate) {
