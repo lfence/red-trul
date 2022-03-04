@@ -48,6 +48,10 @@ const argv = yargs
 
 const VERBOSE = argv["verbose"]
 
+const verboseLog = (...args) => {
+  if (VERBOSE) console.log('[VERBOSE]', ...args)
+}
+
 // supported presets <encoding,flac2mp3_preset>
 const MP3_PRESETS = {
   "V0 (VBR)": "V0",
@@ -149,7 +153,13 @@ async function copyOtherFiles(inDir, outDir) {
     if (!/\.(flac|mp3)$/.test(file)) {
       const stats = await fs.promises.lstat(`${inDir}/${file}`)
       if (stats.isDirectory()) {
-        await fs.promises.mkdir(`${outDir}/${file}`)
+        try {
+          await fs.promises.mkdir(`${outDir}/${file}`)
+	} catch(e) {
+          if (e.code !== "EEXIST") {
+            throw e;
+          }
+        }
         const ncopied = await copyOtherFiles(`${inDir}/${file}`, `${outDir}/${file}`)
         if (ncopied == 0) {
           // directory is empty
@@ -409,6 +419,7 @@ async function main(inDir) {
   // after uploading they will be moved
   const tasks = []
   if (shouldMakeFLAC()) {
+    verboseLog("Will make FLAC 16")
     const inputSampleRate = getConsistentSampleRate(probeInfos)
     if (!inputSampleRate) {
       console.error(`[!] Inconsistent sample rate! check ${inDir}`)
@@ -428,6 +439,7 @@ async function main(inDir) {
 
   for (const [encoding, preset] of Object.entries(MP3_PRESETS)) {
     if (editionGroup.some((torrent) => torrent.encoding === encoding)) {
+      verboseLog(`${encoding} already exists. Skip`)
       // this encoding already available. no need to transcode
       continue
     }
