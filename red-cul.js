@@ -114,9 +114,7 @@ const sanitizeFilename = (filename) =>
 
 function execFile(cmd, args, mute) {
   return new Promise((resolve, reject) => {
-    if (VERBOSE) {
-      console.log(`[-] execFile: ${cmd} ${args.join(" ")}`)
-    }
+    verboseLog(`execFile: ${cmd} ${args.join(" ")}`)
     const childProc = _execFile(cmd, args)
     const prefix = `>> [${childProc.pid}] `
     const prefixErr = `!! [${childProc.pid}] `
@@ -255,26 +253,12 @@ const filterSameEditionGroupAs = ({
   remasterRecordLabel,
 }) =>
   function filterSameEdition(torrent) {
-    // if nothing else given, all torrents are included in the editionGroup
-    let result = true
-
-    // if not same media, be gone!
-    result &= torrent.media === media
-
-    if (remasterTitle) {
-      // for the rest, just filter if available
-      result &= torrent.remasterTitle === remasterTitle
-    }
-    if (remasterCatalogueNumber) {
-      result &= torrent.remasterCatalogueNumber === remasterCatalogueNumber
-    }
-    if (remasterRecordLabel) {
-      result &= torrent.remasterRecordLabel === remasterRecordLabel
-    }
-    if (remasterYear) {
-      result &= torrent.remasterYear === remasterYear
-    }
-    return result
+    if (torrent.media !== media) return false
+    if (torrent.remasterTitle !== remasterTitle) return false
+    if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber) return false
+    if (torrent.remasterRecordLabel !== remasterRecordLabel) return false
+    if (torrent.remasterYear !== remasterYear) return false
+    return true
   }
 
 const toCamelCase = (str) =>
@@ -290,7 +274,8 @@ async function getOrigin(originPath) {
 
   // parse and transform object keys, eg. o["Edition Year"] -> o.editionYear
   return Object.fromEntries(
-    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v])
+    // API uses empty string but Origin gets null. Normalize
+    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v  ?? ""])
   )
 }
 
