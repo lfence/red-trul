@@ -77,7 +77,7 @@ const nproc = os.cpus().length
 // API_KEY requires 'Torrents' permission.
 const API_KEY = argv["api-key"] || process.env.RED_API_KEY
 if (!API_KEY) {
-  console.error("Missing required argument '--api-key'")
+  console.error("Missing required argument '--api-key'. Try '--help' for help")
   process.exit(1)
 }
 
