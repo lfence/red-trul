@@ -143,81 +143,67 @@ function execFile(cmd, args, mute) {
 
 // Copy additional (non-music) files too. Only moving png and jpegs right now,
 // anything else missing?
-async function copyOtherFiles(inDir, outDir) {
-  const files = await fs.promises.readdir(inDir)
+async function copyOtherFiles(outDir, inDir) {
+  const dirExists = {}
+  const tasks = []
+  const itt = traverseFiles(outDir, inDir.replace(/\$/, ""), /\.(png|jpe?g)$/)
+  for (let e = await itt.next(); !e.done; e = await itt.next()) {
+    const { dstDir, srcDir, file } = e.value
+    if (!dirExists[dstDir]) {
+      await fs.promises.mkdir(dstDir, { recursive: true })
+      dirExists[dstDir] = true
+    }
+    tasks.push(fs.promises.copyFile(`${srcDir}/${file}`, `${dstDir}/${file}`))
+  }
+  return Promise.all(tasks).then((n) => n.length)
+}
+
+// just gives a list dst and src dirts for each file matching the filePtrn
+async function* traverseFiles(dstDir, srcDir, filePtrn) {
+  const files = await fs.promises.readdir(srcDir)
+
   for (const file of files) {
-    // if its not flac or mp3, check if its a directory and do the same thing in
-    // the directory e.g., ./CD1/...
-    if (!/\.(flac|mp3)$/.test(file)) {
-      const stats = await fs.promises.lstat(`${inDir}/${file}`)
+    if (!filePtrn.test(file)) {
+      // probably we're not interested, but it could be a directory and we are
+      // recursive so let's go check
+      const stats = await fs.promises.lstat(`${srcDir}/${file}`)
       if (stats.isDirectory()) {
-        try {
-          await fs.promises.mkdir(`${outDir}/${file}`)
-	} catch(e) {
-          if (e.code !== "EEXIST") {
-            throw e;
-          }
-        }
-        const ncopied = await copyOtherFiles(`${inDir}/${file}`, `${outDir}/${file}`)
-        if (ncopied == 0) {
-          // directory is empty
-          await fs.promises.rmdir(`${outDir}/${file}`)
-        }
+        // file is a dir
+        yield* traverseFiles(`${dstDir}/${file}`, `${srcDir}/${file}`, filePtrn)
       }
+    } else {
+      yield { dstDir, srcDir, file }
     }
   }
-  return Promise.all(
-    files
-      .filter((f) => /\.(jpe?g|png)$/.test(f))
-      .map((file) =>
-        fs.promises.copyFile(`${inDir}/${file}`, `${outDir}/${file}`)
-      )
-  ).then((n) => n.length)
 }
 
 async function makeFlacTranscode(outDir, inDir, sampleRate) {
-  try {
-    await fs.promises.mkdir(outDir)
-  } catch (err) {
-    if (err.code !== "EEXIST") {
-      // output directory must not exist already. there's a risk, if transcoding
-      // flac24->flac16 that the folder have the same name.
-      throw err
+  const dirExists = {}
+  const itt = traverseFiles(outDir, inDir.replace(/\$/, ""), /\.flac$/)
+  for (let e = await itt.next(); !e.done; e = await itt.next()) {
+    const { dstDir, srcDir, file } = e.value
+    if (!dirExists[dstDir]) {
+      await fs.promises.mkdir(dstDir, { recursive: true })
+      dirExists[dstDir] = true
     }
-  }
-  const files = await fs.promises.readdir(inDir)
-
-  for (const file of files) {
-    if (!/\.flac$/.test(file)) {
-      const stats = await fs.promises.lstat(`${inDir}/${file}`)
-      if (stats.isDirectory()) {
-        // recurse into next subdirectory.
-        await makeFlacTranscode(
-          `${outDir}/${file}`,
-          `${inDir}/${file}`,
-          sampleRate
-        )
-      }
-    } else {
-      console.log(`[-] Transcoding ${file}...`)
-      await execFile(
-        "sox",
-        [
-          "--multi-threaded",
-          "--buffer=131072",
-          "-G",
-          `${inDir}/${file}`,
-          "-b16",
-          `${outDir}/${file}`,
-          "rate",
-          "-v",
-          "-L",
-          `${sampleRate}`,
-          "dither",
-        ],
-        !VERBOSE
-      )
-    }
+    console.log(`[-] Transcoding ${file}...`)
+    await execFile(
+      "sox",
+      [
+        "--multi-threaded",
+        "--buffer=131072",
+        "-G",
+        `${srcDir}/${file}`,
+        "-b16",
+        `${dstDir}/${file}`,
+        "rate",
+        "-v",
+        "-L",
+        `${sampleRate}`,
+        "dither",
+      ],
+      !VERBOSE
+    )
   }
 }
 
@@ -451,7 +437,7 @@ async function main(inDir) {
     const { inDir, outDir, doTranscode, message, format, bitrate } = t
     console.log(`[-] Transcoding ${outDir}`)
     await doTranscode()
-    await copyOtherFiles(inDir, outDir)
+    await copyOtherFiles(outDir, inDir)
     const torrent = await createTorrent(outDir, {
       private: true,
       createdBy: `${pkg.name}@${pkg.version}`,
