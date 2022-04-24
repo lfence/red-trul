@@ -6,6 +6,7 @@ const os = require("os")
 const pkg = require("./package.json")
 const _execFile = require("child_process").execFile
 const yargs = require("yargs")
+const { decode } = require("html-entities")
 
 const initApi = require("./red-api")
 
@@ -249,10 +250,13 @@ const filterSameEditionGroupAs = ({
 }) =>
   function filterSameEdition(torrent) {
     if (torrent.media !== media) return false
-    if (torrent.remasterTitle !== remasterTitle) return false
+    // Sometimes special chars are html-entity encoded
+    // e.g., "L&oslash;msk" vs "Lømsk"
+    if (decode(torrent.remasterTitle) !== remasterTitle) return false
     if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber)
       return false
-    if (torrent.remasterRecordLabel !== remasterRecordLabel) return false
+    if (decode(torrent.remasterRecordLabel) !== remasterRecordLabel)
+      return false
     if (torrent.remasterYear !== remasterYear) return false
     return true
   }
