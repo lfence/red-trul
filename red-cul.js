@@ -39,6 +39,10 @@ const argv = yargs
     describe: "Don't transcode into 320",
     boolean: true,
   })
+  .option("no-upload", {
+    describe: "Won't upload anything",
+    boolean: true,
+  })
   .option("verbose", {
     boolean: true,
     describe: "Print more",
@@ -488,8 +492,12 @@ async function main(inDir) {
     uploadOpts.extra_release_desc.push(release_desc)
   }
 
-  console.log("[-] Uploading...")
-  await redAPI.upload(uploadOpts)
+  if (argv["no-upload"]) {
+    console.log("[-] Skip upload...")
+  } else {
+    console.log("[-] Uploading...")
+    await redAPI.upload(uploadOpts)
+  }
   console.log("[-] Write torrents...")
   await Promise.all(
     files.map(({ fileName, postData }) =>
