@@ -15,5 +15,5 @@ if ! flock -x -w $TIMEOUT $FD; then
   exit 1
 else
   echo [+] flock: our turn to go!
-  `dirname $(realpath "$0")`/red-cul.js "$@"
+  `dirname $(realpath "$0")`/trul.js "$@"
 fi

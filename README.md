@@ -1,4 +1,4 @@
-# red-cul: RED Convert UpLoad
+# red-trul: RED Transcode-Upload
 This little utility 
 - Takes one or more directories of as input. Inputs without any 
   [origin.yml](https://github.com/x1ppy/gazelle-origin) file or that are not flac
@@ -15,13 +15,13 @@ as always.*
 ## Installing
 
 ```bash
-# assuming node.js and git are installed
-sudo apt install flac lame sox ffmpeg 
-git clone https://github.com/lfence/red-cul 
-cd red-cul
+# assuming node.js are installed
+sudo apt install flac lame sox ffmpeg git
+git clone https://github.com/lfence/red-trul
+cd red-trul
 # clones flac2mp3 sub repo
 git submodule update --init --recursive .
-# Remove unsync behavior for ancient (pre-id3) mp3 players. 
+# Recommended: Remove unsync behavior for ancient (pre-id3) mp3 players.
 # Fixes a bug with multibyte characters in id3v23 tags.
 sed -i '/use MP3::Tag;/aMP3::Tag->config(id3v23_unsync => 0);' flac2mp3/flac2mp3.pl
 npm install
@@ -30,7 +30,7 @@ npm install
 ## Usage
 
 ```
-Usage: red-cul.js [OPTIONS] flac-dir [flac-dir2, [...]]
+Usage: trul.js [OPTIONS] flac-dir [flac-dir2, [...]]
 
 Options:
       --version        Show version number                             [boolean]
@@ -46,13 +46,13 @@ Options:
   -h, --help           Show help                                       [boolean]
 ```
 
-`flock.bash` is provided to avoid running multiple instances of red-cul, but queue
+`flock.bash` is provided to avoid running multiple instances of red-trul, but queue
 up jobs instead.
 
 ## Example toolchain
 
 Have rtorrent do two things:
- - Run a `postdl.bash` script that runs `gazelle-origin` and `red-cul` (through `flock.bash`)
+ - Run a `postdl.bash` script that runs `gazelle-origin` and `red-trul` (through `flock.bash`)
  - Monitor a directory for new torrents to add 
 
 Some of this information comes from [gazelle-origin](https://github.com/x1ppy/gazelle-origin).
@@ -77,7 +77,7 @@ BASE_PATH=$1
 INFO_HASH=$2
 SESSION_PATH=$3
 
-REDCUL_PATH=/some/path/red-cul/flock.bash
+REDCUL_PATH=/some/path/red-trul/flock.bash
 GAZELLEORIGIN_PATH=/some/path
 TRANSCODE_DIR=/home/lfen/my_music
 # NOTE this matches with .rtorrent.rc watch dir
