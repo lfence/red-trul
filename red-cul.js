@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const yaml = require("yaml")
-const fs = require("fs")
+const fs = require("fs").promises
 const path = require("path")
 const os = require("os")
 const pkg = require("./package.json")
@@ -58,23 +58,20 @@ const verboseLog = (...args) => {
 }
 
 // supported presets <encoding,flac2mp3_preset>
-const MP3_PRESETS = {
-  "V0 (VBR)": "V0",
-  320: "320",
+const mp3presets = []
+
+// Some stupid trick turns everything "--no-" into the opposite.
+// https://github.com/yargs/yargs/blob/main/docs/tricks.md
+if (argv["v0"] === false) {
+  verboseLog("[-] Won't transcode V0")
+} else {
+  mp3presets.push({ encoding: "V0 (VBR)", preset: "V0" })
 }
 
-if (argv["no-v0"]) {
-  if (VERBOSE) {
-    console.log("[-] Won't transcode V0")
-  }
-  delete MP3_PRESETS["V0 (VBR)"]
-}
-
-if (argv["no-320"]) {
-  if (VERBOSE) {
-    console.log("[-] Won't transcode 320")
-  }
-  delete MP3_PRESETS["320"]
+if (argv["320"] === false) {
+  verboseLog("[-] Won't transcode 320")
+} else {
+  mp3presets.push({ encoding: "320", preset: "320" })
 }
 
 const nproc = os.cpus().length
@@ -93,21 +90,32 @@ let ANNOUNCE_URL = argv["announce"]
 
 // Transcodes end here. If unset they end up next to the input dir
 const TRANSCODE_DIR = argv["transcode-dir"]
-if (TRANSCODE_DIR && !fs.statSync(TRANSCODE_DIR, { throwIfNoEntry: false })) {
-  console.error(`${TRANSCODE_DIR} does not exist! Please create it.`)
-  process.exit(1)
-}
 
 // Ready torrents end here (rtorrent watches this dir and auto adds torrents)
 const TORRENT_DIR = argv["torrent-dir"]
-if (!fs.statSync(TORRENT_DIR, { throwIfNoEntry: false })) {
-  console.error(`${TORRENT_DIR} does not exist! Please create it.`)
-  process.exit(1)
+
+async function ensureDir(dir) {
+  const stats = await fs.stat(dir, { throwIfNoEntry: false })
+  if (!stats) {
+    console.error(`${dir} does not exist! Please create it.`)
+    process.exit(1)
+  }
+  if (!stats.isDirectory()) {
+    console.error(`${dir} is not a directory.`)
+    process.exit(1)
+  }
 }
 
-if (argv._.length == 0) {
-  console.error(`No inputs, nothing to do. Try '--help'`)
-  process.exit(1)
+async function checkArgs() {
+  if (argv._.length == 0) {
+    console.error(`No inputs, nothing to do. Try '--help'`)
+    process.exit(1)
+  }
+  if (TRANSCODE_DIR) {
+    // not required
+    await ensureDir(TRANSCODE_DIR)
+  }
+  await ensureDir(TORRENT_DIR)
 }
 
 const FLAC2MP3_PATH =
@@ -151,51 +159,49 @@ function execFile(cmd, args, mute) {
   })
 }
 
+const mkdirpMaybe = (() => {
+  const exists = {}
+  return async function mkdirpMaybe(dir) {
+    if (!exists[dir]) {
+      await fs.mkdir(dir, { recursive: true })
+      exists[dir] = true
+    }
+  }
+})()
+
+// gives an iterator<{file, dir}>, where entries exclude baseDir.
+async function* traverseFiles(baseDir) {
+  for (let dirent of await fs.readdir(baseDir, { withFileTypes: true })) {
+    const fpath = path.join(baseDir, dirent.name)
+    if (dirent.isDirectory()) {
+      for await (const f of traverseFiles(fpath)) {
+        yield { file: f, dir: path.join(f.dir, dirent.name) }
+      }
+    }
+    yield { file: dirent.name, dir: "." }
+  }
+}
+
 // Copy additional (non-music) files too. Only moving png and jpegs right now,
 // anything else missing?
 async function copyOtherFiles(outDir, inDir) {
-  const dirExists = {}
   const tasks = []
-  const itt = traverseFiles(outDir, inDir.replace(/\$/, ""), /\.(png|jpe?g)$/)
-  for (let e = await itt.next(); !e.done; e = await itt.next()) {
-    const { dstDir, srcDir, file } = e.value
-    if (!dirExists[dstDir]) {
-      await fs.promises.mkdir(dstDir, { recursive: true })
-      dirExists[dstDir] = true
-    }
-    tasks.push(fs.promises.copyFile(`${srcDir}/${file}`, `${dstDir}/${file}`))
+  for await (let { file, dir } of traverseFiles(inDir)) {
+    if (!/\.(png|jpe?g)$/.test(file)) continue
+    const src = path.join(inDir, dir, file)
+    const dst = path.join(outDir, dir, file)
+    await mkdirpMaybe(path.join(outDir, dir))
+    tasks.push(fs.copyFile(src, dst))
   }
-  return Promise.all(tasks).then((n) => n.length)
-}
-
-// just gives a list dst and src dirts for each file matching the filePtrn
-async function* traverseFiles(dstDir, srcDir, filePtrn) {
-  const files = await fs.promises.readdir(srcDir)
-
-  for (const file of files) {
-    if (!filePtrn.test(file)) {
-      // probably we're not interested, but it could be a directory and we are
-      // recursive so let's go check
-      const stats = await fs.promises.lstat(`${srcDir}/${file}`)
-      if (stats.isDirectory()) {
-        // file is a dir
-        yield* traverseFiles(`${dstDir}/${file}`, `${srcDir}/${file}`, filePtrn)
-      }
-    } else {
-      yield { dstDir, srcDir, file }
-    }
-  }
+  return Promise.all(tasks)
 }
 
 async function makeFlacTranscode(outDir, inDir, sampleRate) {
-  const dirExists = {}
-  const itt = traverseFiles(outDir, inDir.replace(/\$/, ""), /\.flac$/)
-  for (let e = await itt.next(); !e.done; e = await itt.next()) {
-    const { dstDir, srcDir, file } = e.value
-    if (!dirExists[dstDir]) {
-      await fs.promises.mkdir(dstDir, { recursive: true })
-      dirExists[dstDir] = true
-    }
+  for await (let { file, dir } of traverseFiles(inDir)) {
+    if (!/\.flac$/.test(file)) continue
+    await mkdirpMaybe(path.join(outDir, dir))
+    const src = path.join(inDir, dir, file)
+    const dst = path.join(outDir, dir, file)
     console.log(`[-] Transcoding ${file}...`)
     await execFile(
       "sox",
@@ -203,9 +209,9 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
         "--multi-threaded",
         "--buffer=131072",
         "-G",
-        `${srcDir}/${file}`,
+        src,
         "-b16",
-        `${dstDir}/${file}`,
+        dst,
         "rate",
         "-v",
         "-L",
@@ -232,13 +238,6 @@ async function probeMediaFile(path) {
     true
   )
   return JSON.parse(stdout)
-}
-
-function getBitrate(probeInfo) {
-  const flacStream = probeInfo.streams.find(
-    ({ codec_name }) => codec_name === "flac"
-  )
-  return Number.parseInt(flacStream.bits_per_raw_sample, 10)
 }
 
 const filterSameEditionGroupAs = ({
@@ -269,7 +268,7 @@ const toCamelCase = (str) =>
     .replace(/^./, (c) => c.toLowerCase())
 
 async function getOrigin(originPath) {
-  const origin = await fs.promises.readFile(originPath)
+  const origin = await fs.readFile(originPath)
   const parsed = yaml.parse(origin.toString("utf-8"))
 
   // parse and transform object keys, eg. o["Edition Year"] -> o.editionYear
@@ -342,6 +341,9 @@ async function main(inDir) {
   const editionGroup = torrentGroup.torrents.filter(
     filterSameEditionGroupAs(editionInfo)
   )
+  if (editionGroup.length === 0) {
+    throw Error("Edition group should at lesat contain the current release")
+  }
 
   const probeInfos = await Promise.all(
     origin.files
@@ -384,7 +386,15 @@ async function main(inDir) {
     }
 
     if (editionGroup.some((torrent) => torrent.encoding === "Lossless")) {
+      // a flac16 already exists.
       return false
+    }
+
+    const getBitrate = (probeInfo) => {
+      const flacStream = probeInfo.streams.find(
+        ({ codec_name }) => codec_name === "flac"
+      )
+      return Number.parseInt(flacStream.bits_per_raw_sample, 10)
     }
 
     const badBitRate = probeInfos.map(getBitrate).filter((b) => b !== 24)
@@ -422,7 +432,7 @@ async function main(inDir) {
     }
   }
 
-  for (const [encoding, preset] of Object.entries(MP3_PRESETS)) {
+  for (const { encoding, preset } of mp3presets) {
     if (editionGroup.some((torrent) => torrent.encoding === encoding)) {
       verboseLog(`${encoding} already exists. Skip`)
       // this encoding already available. no need to transcode
@@ -502,7 +512,8 @@ async function main(inDir) {
     uploadOpts.extra_release_desc.push(release_desc)
   }
 
-  if (argv["no-upload"]) {
+  // yargs does magic and inverts --no-upload..
+  if (argv["upload"] === false) {
     console.log("[-] Skip upload...")
   } else {
     console.log("[-] Uploading...")
@@ -511,13 +522,14 @@ async function main(inDir) {
   console.log("[-] Write torrents...")
   await Promise.all(
     files.map(({ fileName, postData }) =>
-      fs.promises.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input)
+      fs.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input)
     )
   )
   console.log("[*] Done!")
 }
 
 ;(async () => {
+  await checkArgs()
   for (const dir of argv._) {
     await main(dir.replace(/\/$/, "")).catch(console.error)
   }
