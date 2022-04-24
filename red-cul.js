@@ -53,7 +53,7 @@ const argv = yargs
 const VERBOSE = argv["verbose"]
 
 const verboseLog = (...args) => {
-  if (VERBOSE) console.log('[VERBOSE]', ...args)
+  if (VERBOSE) console.log("[VERBOSE]", ...args)
 }
 
 // supported presets <encoding,flac2mp3_preset>
@@ -104,12 +104,17 @@ if (!fs.statSync(TORRENT_DIR, { throwIfNoEntry: false })) {
   process.exit(1)
 }
 
+if (argv._.length == 0) {
+  console.error(`No inputs, nothing to do. Try '--help'`)
+  process.exit(1)
+}
+
 const FLAC2MP3_PATH =
   process.env.FLAC2MP3 || `${__dirname}/flac2mp3/flac2mp3.pl`
 
 const sanitizeFilename = (filename) =>
   filename
-    .replace(/\//g, "∕")
+    .replace(/\//g, "∕") // Note that is not a normal / but a utf-8 one
     .replace(/^~/, "")
     .replace(/\.$/g, "_")
     .replace(/[\x01-\x1f]/g, "_")
@@ -245,7 +250,8 @@ const filterSameEditionGroupAs = ({
   function filterSameEdition(torrent) {
     if (torrent.media !== media) return false
     if (torrent.remasterTitle !== remasterTitle) return false
-    if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber) return false
+    if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber)
+      return false
     if (torrent.remasterRecordLabel !== remasterRecordLabel) return false
     if (torrent.remasterYear !== remasterYear) return false
     return true
@@ -265,7 +271,7 @@ async function getOrigin(originPath) {
   // parse and transform object keys, eg. o["Edition Year"] -> o.editionYear
   return Object.fromEntries(
     // API uses empty string but Origin gets null. Normalize
-    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v  ?? ""])
+    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v ?? ""])
   )
 }
 
@@ -451,11 +457,11 @@ async function main(inDir) {
     files.push({
       fileName: `${path.basename(outDir)}.torrent`,
       postData: {
-	format,
-	bitrate,
-	release_desc: message,
-	file_input: torrent,
-      }
+        format,
+        bitrate,
+        release_desc: message,
+        file_input: torrent,
+      },
     })
   }
 
