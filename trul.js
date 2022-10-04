@@ -342,7 +342,7 @@ async function main(inDir) {
     filterSameEditionGroupAs(editionInfo)
   )
   if (editionGroup.length === 0) {
-    throw Error("Edition group should at lesat contain the current release")
+    throw Error("Edition group should at least contain the current release")
   }
 
   const probeInfos = await Promise.all(
@@ -425,7 +425,8 @@ async function main(inDir) {
         inDir,
         outDir,
         doTranscode: () => makeFlacTranscode(outDir, inDir, sampleRate),
-        message: `Source: ${origin.permalink}. Method: sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
+        message: `[b][code]transcode using:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]
+[b][code]transcode command:[/code][/b] [code]sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither[/code]`,
         format: "FLAC",
         bitrate: "Lossless",
       })
@@ -450,7 +451,8 @@ async function main(inDir) {
           inDir,
           outDir,
         ]),
-      message: `Source: ${origin.permalink}. Method: flac2mp3 --preset=${preset}`,
+      message: `[b][code]transcode using:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]
+[b][code]transcode command:[/code][/b] [code]flac2mp3 --preset=${preset}[/code]`,
       format: "MP3",
       bitrate: encoding,
     })
