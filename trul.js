@@ -329,7 +329,7 @@ async function main(inDir) {
     media: origin.media,
     remasterTitle: origin.edition,
     remasterCatalogueNumber: origin.catalogNumber,
-    remasterYear: origin.editionYear || origin.originalYear,
+    remasterYear: origin.editionYear || 0, // API sets year to 0 if not specified
     remasterRecordLabel: origin.recordLabel,
   }
   console.log("[-] permalink:", origin.permalink)
@@ -341,6 +341,7 @@ async function main(inDir) {
   const editionGroup = torrentGroup.torrents.filter(
     filterSameEditionGroupAs(editionInfo)
   )
+
   if (editionGroup.length === 0) {
     throw Error("Edition group should at least contain the current release")
   }
@@ -413,6 +414,12 @@ async function main(inDir) {
   // torrents will be put in a temp directory before uploading,
   // after uploading they will be moved
   const tasks = []
+  const mkMessage = (command) => (
+`[b][code]transcode source:[/code][/b] [url=${origin.permalink}][code]${origin.format} / ${origin.encoding}[/code][/url]
+[b][code]transcode command:[/code][/b] [code]${command}[/code]
+[b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]`
+  )
+
   if (shouldMakeFLAC()) {
     verboseLog("Will make FLAC 16")
     const inputSampleRate = getConsistentSampleRate(probeInfos)
@@ -425,8 +432,7 @@ async function main(inDir) {
         inDir,
         outDir,
         doTranscode: () => makeFlacTranscode(outDir, inDir, sampleRate),
-        message: `[b][code]transcode using:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]
-[b][code]transcode command:[/code][/b] [code]sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither[/code]`,
+        message: mkMessage(`sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`) ,
         format: "FLAC",
         bitrate: "Lossless",
       })
@@ -451,8 +457,7 @@ async function main(inDir) {
           inDir,
           outDir,
         ]),
-      message: `[b][code]transcode using:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]
-[b][code]transcode command:[/code][/b] [code]flac2mp3 --preset=${preset}[/code]`,
+      message: mkMessage(`flac2mp3 --preset=${preset}`) ,
       format: "MP3",
       bitrate: encoding,
     })
