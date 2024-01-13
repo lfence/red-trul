@@ -13,10 +13,14 @@ const initApi = require("./red-api")
 const createTorrent = require("util").promisify(require("create-torrent"))
 
 const argv = yargs
-  .usage("Usage: $0 [OPTIONS] flac-dir [flac-dir2, [...]]")
+  .usage("Usage: $0 [OPTIONS] flac-dir")
+  .option("info-hash", {
+    alias: "i",
+    describe: "Use the given info hash."
+  })
   .option("api-key", {
     describe:
-      "API token with Torrents capability. Env definable as RED_API_KEY",
+      "API token with Torrents capability. Also environ-defined as RED_API_KEY",
   })
   .option("torrent-dir", {
     alias: "o",
@@ -41,7 +45,7 @@ const argv = yargs
     boolean: true,
   })
   .option("no-upload", {
-    describe: "Won't upload anything",
+    describe: "Don't upload anything",
     boolean: true,
   })
   .option("verbose", {
@@ -196,13 +200,16 @@ async function copyOtherFiles(outDir, inDir) {
   return Promise.all(tasks)
 }
 
-async function makeFlacTranscode(outDir, inDir, sampleRate) {
-  for await (let { file, dir } of traverseFiles(inDir)) {
-    if (!/\.flac$/.test(file)) continue
-    await mkdirpMaybe(path.join(outDir, dir))
-    const src = path.join(inDir, dir, file)
-    const dst = path.join(outDir, dir, file)
-    console.log(`[-] Transcoding ${file}...`)
+async function makeFlacTranscode(outDir, inDir, files) {
+  await mkdirpMaybe(outDir)
+  for (const file of files) {
+    await mkdirpMaybe(path.dirname(file.path))
+    const src = path.join(inDir, file.path)
+    const dst = path.join(outDir, file.path)
+    console.log(`[-] Transcoding ${file.path}...`)
+
+    const sampleRate = file.sampleRate % 48000 === 0 ? 48000 : 44100
+
     await execFile(
       "sox",
       [
@@ -278,37 +285,95 @@ async function getOrigin(originPath) {
   )
 }
 
-// get the sample rate of this release or return false if the sample rates are
-// bad (inconsistent or too low)
-function getConsistentSampleRate(probeInfos) {
-  let currentRate = null
-  for (const probeInfo of probeInfos) {
-    const flacStream = probeInfo.streams.find(
+function formatArtist(group) {
+  let artists = group.musicInfo.artists
+  if (artists.length == 1) return artists[0].name
+  else if (artists.length == 2) return `${artists[0].name} & ${artists[1].name}`
+  else return "Various Artists"
+}
+
+function formatDirname(group, torrent, format) {
+  // will make dirs for FLAC, V0 and 320 transcodes using this as base
+  let dirname = `${sanitizeFilename(`${formatArtist(group)} - ${group.name}`)}`
+  const year = torrent.remasterYear || group.year
+  if (torrent.remasterTitle) {
+    // e.g., "Special Edition"
+    dirname += ` (${torrent.remasterTitle})`
+  }
+
+  if (year) {
+    dirname += ` (${year})`
+  }
+
+  return `${dirname} - ${torrent.media} ${format}`
+}
+
+async function analyzeFileList(inDir, fileList) {
+  const flacs = fileList
+    .split("|||")
+    .map((e) => {
+      const m = /(^.*){{{([0-9]*)}}}$/.exec(e)
+      return [m[1], m[2]]
+    })
+    .map(([filename]) => decode(filename))
+    .filter((name) => /\.flac$/.test(name))
+
+  console.log(`[-] ffprobe ${flacs.length} files...`)
+  const results = []
+
+  for (const path of flacs) {
+    const absPath = `${inDir}/${path}`
+
+    // this was originally in parallel, but for > 100 files it became flaky..
+    const info = await probeMediaFile(absPath)
+    const tags = Object.keys(info.format.tags).map((key) => key.toUpperCase())
+    if (!["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))) {
+      console.error(`[!] Required tags are not present! check ${absPath}`)
+      throw new Error("Bad tags")
+    }
+    const flacStream = info.streams.find(
       ({ codec_name }) => codec_name === "flac",
     )
-    const srcSampleRate = Number.parseInt(flacStream.sample_rate, 10)
-    if (!currentRate) {
-      currentRate = srcSampleRate
-    } else if (currentRate !== srcSampleRate) {
-      console.warn(
-        `Inconsistent sample rates, ${currentRate} vs ${srcSampleRate}`,
-      )
-      //  return false
-    } else if (srcSampleRate < 44100) {
-      console.warn(`Sample rates below minimum, ${srcSampleRate}`)
-      return false
-    }
+
+    results.push({
+      path, // e.g., CD1/01......flac
+      tags,
+      bitRate: Number.parseInt(flacStream.bits_per_raw_sample, 10),
+      sampleRate: Number.parseInt(flacStream.sample_rate, 10),
+    })
   }
-  return currentRate
+
+  return results
+}
+
+function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
+  if (torrent.encoding !== "24bit Lossless") {
+    // we only make flac16 out of flac24
+    return false
+  }
+
+  if (editionGroup.some((torrent) => torrent.encoding === "Lossless")) {
+    // a flac16 already exists.
+    return false
+  }
+
+  return analyzedFiles.every(({ bitRate }) => bitRate == 24)
 }
 
 async function main(inDir) {
-  const origin = await getOrigin(`${inDir}/origin.yaml`)
-
-  if (origin.format !== "FLAC") {
-    console.log("[-] Not a flac, not interested")
-    return
+  let infoHash = argv['info-hash']
+  if (!infoHash) {
+    // if the folder has an origin.yaml file, left there by gazelle-origin, we
+    // we use the infoHash it specifies as fallback.
+    const origin = await getOrigin(`${inDir}/origin.yaml`)
+    if (origin.format !== "FLAC") {
+      console.log("[-] Not a flac, not interested")
+      return
+    }
+    infoHash = origin.infoHash
   }
+
+  const outBaseDirname = `${TRANSCODE_DIR || path.dirname(inDir)}`
 
   if (!ANNOUNCE_URL) {
     ANNOUNCE_URL = await (async () => {
@@ -323,124 +388,53 @@ async function main(inDir) {
   }
   console.log(`[-] using announce: ${ANNOUNCE_URL}`)
 
-  const probeInfos = []
-  const names = origin.files
-    .map(({ Name }) => Name)
-    .filter((name) => /\.flac$/.test(name))
-    .map((name) => `${inDir}/${name}`)
+  console.log(`[-] fetch torrent info...`)
+  // get the current torrent
+  const { group, torrent } = await redAPI.torrent({ hash: infoHash })
 
-  for (name of names) {
-    probeInfos.push(await probeMediaFile(name))
-  }
+  console.log(`[-] analyze filelist...`)
+  const analyzedFiles = await analyzeFileList(inDir, torrent.fileList)
+  console.log("[+] Required tags are present, would transcode this")
 
-  console.log(`[-] fetch torrentgroup of ${origin.infoHash}`)
-  const torrentGroup = await redAPI.torrentgroup({ hash: origin.infoHash })
+  const permalink = `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
+  console.log(`[-] permalink: ${permalink}`)
+  const grouplink = `https://redacted.ch/torrents.php?id=${group.id}`
+  console.log(`[-] grouplink: ${grouplink}`)
 
-  const editionInfo = {
-    media: origin.media,
-    remasterTitle: origin.edition,
-    remasterCatalogueNumber: origin.catalogNumber,
-    remasterYear: origin.editionYear || 0, // API sets year to 0 if not specified
-    remasterRecordLabel: origin.recordLabel,
-  }
-  console.log("[-] permalink:", origin.permalink)
-  console.log(
-    "[-] link:",
-    `https://redacted.ch/torrents.php?id=${torrentGroup.group.id}`,
-  )
+  // see what releases already exists for you.
+  console.log(`[-] fetch torrentgroup...`)
+  const { torrents } = await redAPI.torrentgroup({ id: group.id })
 
-  const editionGroup = torrentGroup.torrents.filter(
-    filterSameEditionGroupAs(editionInfo),
-  )
+  // torrents that belong to this edition (how they are groups by the website)
+  const editionGroup = torrents.filter(filterSameEditionGroupAs(torrent))
 
   if (editionGroup.length === 0) {
     throw Error("Edition group should at least contain the current release")
   }
 
-  const okTags = probeInfos.some((pi) => {
-    const tags = Object.keys(pi.format.tags).map((key) => key.toUpperCase())
-    return ["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))
-  })
-
-  if (!okTags) {
-    console.error(`[!] Required tags are not present! check ${inDir}`)
-    return
-  }
-  console.log("[+] Required tags are present, would transcode this")
-
-  // will make dirs for FLAC, V0 and 320 transcodes using this as base
-  let outputDirBase = `${
-    TRANSCODE_DIR || path.dirname(inDir)
-  }/${sanitizeFilename(`${origin.artist} - ${origin.name}`)}`
-  const year = editionInfo.remasterYear || origin.originalYear
-  if (editionInfo.remasterTitle) {
-    // e.g., "Special Edition"
-    outputDirBase += ` (${editionInfo.remasterTitle})`
-  }
-
-  if (year) {
-    // can neither remasterYear nor originalYear ever be present?
-    outputDirBase += ` (${year})`
-  }
-  outputDirBase += ` - ${origin.media}`
-
-  const shouldMakeFLAC = function shouldMakeFLAC() {
-    if (origin.encoding !== "24bit Lossless") {
-      return false
-    }
-
-    if (editionGroup.some((torrent) => torrent.encoding === "Lossless")) {
-      // a flac16 already exists.
-      return false
-    }
-
-    const getBitrate = (probeInfo) => {
-      const flacStream = probeInfo.streams.find(
-        ({ codec_name }) => codec_name === "flac",
-      )
-      return Number.parseInt(flacStream.bits_per_raw_sample, 10)
-    }
-
-    const badBitRate = probeInfos.map(getBitrate).filter((b) => b !== 24)
-    if (badBitRate.length > 0) {
-      console.error(
-        `[!] These are not 24bit flac. Found ${badBitRate.join(
-          ",",
-        )}-bit too. Won't transcode this to flac16`,
-      )
-      return false
-    }
-
-    return true
-  }
-
   // torrents will be put in a temp directory before uploading,
   // after uploading they will be moved
-  const tasks = []
+  const transcodeTasks = []
   const mkMessage = (command) =>
-    `[b][code]transcode source:[/code][/b] [url=${origin.permalink}][code]${origin.format} / ${origin.encoding}[/code][/url]
+    `[b][code]transcode source:[/code][/b] [url=${permalink}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
 [b][code]transcode command:[/code][/b] [code]${command}[/code]
 [b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]`
 
-  if (shouldMakeFLAC()) {
+  if (shouldMakeFLAC(torrent, editionGroup, analyzedFiles)) {
     verboseLog("Will make FLAC 16")
-    const inputSampleRate = getConsistentSampleRate(probeInfos)
-    if (!inputSampleRate) {
-      console.error(`[!] Inconsistent sample rate! check ${inDir}`)
-    } else {
-      const outDir = `${outputDirBase} FLAC`
-      const sampleRate = inputSampleRate % 48000 === 0 ? 48000 : 44100
-      tasks.push({
-        inDir,
-        outDir,
-        doTranscode: () => makeFlacTranscode(outDir, inDir, sampleRate),
-        message: mkMessage(
-          `sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
-        ),
-        format: "FLAC",
-        bitrate: "Lossless",
-      })
-    }
+    const outDir = path.join(
+      outBaseDirname,
+      formatDirname(group, torrent, "FLAC"),
+    )
+    transcodeTasks.push({
+      outDir,
+      doTranscode: () => makeFlacTranscode(outDir, inDir, analyzedFiles),
+      message: mkMessage(
+        `sox -G input.flac -b16 output.flac rate -v -L {sampleRate} dither`,
+      ),
+      format: "FLAC",
+      bitrate: "Lossless",
+    })
   }
 
   for (const { encoding, preset } of mp3presets) {
@@ -449,9 +443,11 @@ async function main(inDir) {
       // this encoding already available. no need to transcode
       continue
     }
-    const outDir = `${outputDirBase} ${preset}`
-    tasks.push({
-      inDir,
+    const outDir = path.join(
+      outBaseDirname,
+      formatDirname(group, torrent, preset),
+    )
+    transcodeTasks.push({
       outDir,
       doTranscode: () =>
         execFile(FLAC2MP3_PATH, [
@@ -468,8 +464,8 @@ async function main(inDir) {
   }
 
   const files = []
-  for (const t of tasks) {
-    const { inDir, outDir, doTranscode, message, format, bitrate } = t
+  for (const t of transcodeTasks) {
+    const { outDir, doTranscode, message, format, bitrate } = t
     console.log(`[-] Transcoding ${outDir}`)
     await doTranscode()
     await copyOtherFiles(outDir, inDir)
@@ -498,12 +494,12 @@ async function main(inDir) {
   const uploadOpts = {
     unknown: false, // can this be true?
     scene: false,
-    groupid: torrentGroup.group.id,
-    remaster_year: editionInfo.remasterYear,
-    remaster_title: editionInfo.remasterTitle,
-    remaster_record_label: editionInfo.remasterRecordLabel,
-    remaster_catalogue_number: editionInfo.remasterCatalogueNumber,
-    media: editionInfo.media,
+    groupid: group.id,
+    remaster_year: torrent.remasterYear,
+    remaster_title: torrent.remasterTitle,
+    remaster_record_label: torrent.remasterRecordLabel,
+    remaster_catalogue_number: torrent.remasterCatalogueNumber,
+    media: torrent.media,
     ...files[0].postData,
   }
 
@@ -541,7 +537,6 @@ async function main(inDir) {
 
 ;(async () => {
   await checkArgs()
-  for (const dir of argv._) {
-    await main(dir.replace(/\/$/, "")).catch(console.error)
-  }
+  const dir = argv._[0]
+  await main(dir.replace(/\/$/, "")).catch(console.error)
 })()

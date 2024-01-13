@@ -23,17 +23,39 @@ function initAPI(API_KEY) {
     return resp.data.response
   }
 
-  async function torrentgroup({ hash }) {
+  async function torrent({ hash }) {
     const resp = await axios.get(
       `${RED_API}?${q.encode({
-        action: "torrentgroup",
+        action: "torrent",
         hash,
       })}`,
       {
         validateStatus: (status) => status < 500,
         headers: HTTP_AUTHZ_HEADERS,
-      }
+      },
     )
+
+    if (resp.data.status !== "success") {
+      throw new Error(`GET torrent: ${resp.data.status}`)
+    }
+
+    return resp.data.response
+  }
+  async function torrentgroup({ id, hash }) {
+    const query = {
+      action: "torrentgroup",
+    }
+    if (id) {
+      query.id = id
+    } else if (hash) {
+      query.hash = hash
+    } else {
+      throw new Error("args")
+    }
+    const resp = await axios.get(`${RED_API}?${q.encode(query)}`, {
+      validateStatus: (status) => status < 500,
+      headers: HTTP_AUTHZ_HEADERS,
+    })
 
     if (resp.data.status !== "success") {
       throw new Error(`getTorrentGroup: ${resp.data.status}`)
@@ -73,6 +95,7 @@ function initAPI(API_KEY) {
   }
   return {
     index,
+    torrent,
     torrentgroup,
     upload,
   }

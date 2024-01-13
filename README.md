@@ -13,17 +13,28 @@ uploads.*
 
 ## Installing
 
+You need:
+- nodejs
+- flac
+- lame
+- sox
+- ffmpeg
+- git
+
 ```bash
-# assuming node.js are installed
-sudo apt install flac lame sox ffmpeg git
-git clone https://github.com/lfence/red-trul
-cd red-trul
+git clone https://github.com/lfence/red-trul && cd ./red-trul
 # clones flac2mp3 sub repo
 git submodule update --init --recursive .
-# Recommended: Remove unsync behavior for ancient (pre-id3) mp3 players.
-# Fixes a bug with multibyte characters in id3v23 tags.
-sed -i '/use MP3::Tag;/aMP3::Tag->config(id3v23_unsync => 0);' flac2mp3/flac2mp3.pl
 npm install
+```
+
+#### Issue with id3v2 tags and foreign characters
+
+Remove unsync behavior for ancient (pre-id3) mp3 players. This fixes a bug with
+special characters in tags by adding the line.
+
+```
+sed -i '/use MP3::Tag;/aMP3::Tag->config(id3v23_unsync => 0);' flac2mp3/flac2mp3.pl
 ```
 
 ## Usage
@@ -45,12 +56,35 @@ Options:
   -h, --help           Show help                                       [boolean]
 ```
 
+### Example
+
+```
+./trul.js --api-key xxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx "Music/Artist - Album (2024) WEB FLAC" 
+[-] using announce: https://flacsfor.me/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/announce
+[-] fetch torrent info...
+[-] analyze filelist...
+[-] ffprobe 18 files...
+[+] Required tags are present, would transcode this
+[-] permalink: https://redacted.ch/torrents.php?torrentid=4534554
+[-] grouplink: https://redacted.ch/torrents.php?id=2129651
+[-] fetch torrentgroup...
+[-] Transcoding /home/me/Music/Artist - Album (2024) - WEB V0
+>> [3132334] Using 4 transcoding processes.
+
+[-] Transcoding /home/me/Music/Artist - Album (2024) - WEB 320
+>> [3132410] Using 4 transcoding processes.
+
+[-] Uploading...
+[-] Write torrents...
+[*] Done!
+```
+
+## Advanced: Toolchain
+
 Use `flock.bash` to avoid running multiple instances of red-trul, but queue up
 jobs instead.
 
-## Toolchain
-
-It's designed to run non-interactively, but it can be invoked manually too.
+red-trul is designed to run non-interactively.
 
 ![red-trul overview](./overview.png "red-trul overview")
 
