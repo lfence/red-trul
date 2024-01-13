@@ -218,7 +218,7 @@ async function makeFlacTranscode(outDir, inDir, sampleRate) {
         `${sampleRate}`,
         "dither",
       ],
-      !VERBOSE
+      !VERBOSE,
     )
   }
 }
@@ -235,7 +235,7 @@ async function probeMediaFile(path) {
       "json",
       path,
     ],
-    true
+    true,
   )
   return JSON.parse(stdout)
 }
@@ -274,7 +274,7 @@ async function getOrigin(originPath) {
   // parse and transform object keys, eg. o["Edition Year"] -> o.editionYear
   return Object.fromEntries(
     // API uses empty string but Origin gets null. Normalize
-    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v ?? ""])
+    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v ?? ""]),
   )
 }
 
@@ -284,16 +284,16 @@ function getConsistentSampleRate(probeInfos) {
   let currentRate = null
   for (const probeInfo of probeInfos) {
     const flacStream = probeInfo.streams.find(
-      ({ codec_name }) => codec_name === "flac"
+      ({ codec_name }) => codec_name === "flac",
     )
     const srcSampleRate = Number.parseInt(flacStream.sample_rate, 10)
     if (!currentRate) {
       currentRate = srcSampleRate
     } else if (currentRate !== srcSampleRate) {
       console.warn(
-        `Inconsistent sample rates, ${currentRate} vs ${srcSampleRate}`
+        `Inconsistent sample rates, ${currentRate} vs ${srcSampleRate}`,
       )
-      return false
+      //  return false
     } else if (srcSampleRate < 44100) {
       console.warn(`Sample rates below minimum, ${srcSampleRate}`)
       return false
@@ -323,6 +323,17 @@ async function main(inDir) {
   }
   console.log(`[-] using announce: ${ANNOUNCE_URL}`)
 
+  const probeInfos = []
+  const names = origin.files
+    .map(({ Name }) => Name)
+    .filter((name) => /\.flac$/.test(name))
+    .map((name) => `${inDir}/${name}`)
+
+  for (name of names) {
+    probeInfos.push(await probeMediaFile(name))
+  }
+
+  console.log(`[-] fetch torrentgroup of ${origin.infoHash}`)
   const torrentGroup = await redAPI.torrentgroup({ hash: origin.infoHash })
 
   const editionInfo = {
@@ -335,24 +346,16 @@ async function main(inDir) {
   console.log("[-] permalink:", origin.permalink)
   console.log(
     "[-] link:",
-    `https://redacted.ch/torrents.php?id=${torrentGroup.group.id}`
+    `https://redacted.ch/torrents.php?id=${torrentGroup.group.id}`,
   )
 
   const editionGroup = torrentGroup.torrents.filter(
-    filterSameEditionGroupAs(editionInfo)
+    filterSameEditionGroupAs(editionInfo),
   )
 
   if (editionGroup.length === 0) {
     throw Error("Edition group should at least contain the current release")
   }
-
-  const probeInfos = await Promise.all(
-    origin.files
-      .map(({ Name }) => Name)
-      .filter((name) => /\.flac$/.test(name))
-      .map((name) => `${inDir}/${name}`)
-      .map(probeMediaFile)
-  )
 
   const okTags = probeInfos.some((pi) => {
     const tags = Object.keys(pi.format.tags).map((key) => key.toUpperCase())
@@ -393,7 +396,7 @@ async function main(inDir) {
 
     const getBitrate = (probeInfo) => {
       const flacStream = probeInfo.streams.find(
-        ({ codec_name }) => codec_name === "flac"
+        ({ codec_name }) => codec_name === "flac",
       )
       return Number.parseInt(flacStream.bits_per_raw_sample, 10)
     }
@@ -402,8 +405,8 @@ async function main(inDir) {
     if (badBitRate.length > 0) {
       console.error(
         `[!] These are not 24bit flac. Found ${badBitRate.join(
-          ","
-        )}-bit too. Won't transcode this to flac16`
+          ",",
+        )}-bit too. Won't transcode this to flac16`,
       )
       return false
     }
@@ -414,11 +417,10 @@ async function main(inDir) {
   // torrents will be put in a temp directory before uploading,
   // after uploading they will be moved
   const tasks = []
-  const mkMessage = (command) => (
-`[b][code]transcode source:[/code][/b] [url=${origin.permalink}][code]${origin.format} / ${origin.encoding}[/code][/url]
+  const mkMessage = (command) =>
+    `[b][code]transcode source:[/code][/b] [url=${origin.permalink}][code]${origin.format} / ${origin.encoding}[/code][/url]
 [b][code]transcode command:[/code][/b] [code]${command}[/code]
 [b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]`
-  )
 
   if (shouldMakeFLAC()) {
     verboseLog("Will make FLAC 16")
@@ -432,7 +434,9 @@ async function main(inDir) {
         inDir,
         outDir,
         doTranscode: () => makeFlacTranscode(outDir, inDir, sampleRate),
-        message: mkMessage(`sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`) ,
+        message: mkMessage(
+          `sox -G input.flac -b16 output.flac rate -v -L ${sampleRate} dither`,
+        ),
         format: "FLAC",
         bitrate: "Lossless",
       })
@@ -457,7 +461,7 @@ async function main(inDir) {
           inDir,
           outDir,
         ]),
-      message: mkMessage(`flac2mp3 --preset=${preset}`) ,
+      message: mkMessage(`flac2mp3 --preset=${preset}`),
       format: "MP3",
       bitrate: encoding,
     })
@@ -529,8 +533,8 @@ async function main(inDir) {
   console.log("[-] Write torrents...")
   await Promise.all(
     files.map(({ fileName, postData }) =>
-      fs.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input)
-    )
+      fs.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input),
+    ),
   )
   console.log("[*] Done!")
 }
