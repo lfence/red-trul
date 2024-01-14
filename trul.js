@@ -20,7 +20,7 @@ const argv = yargs
   })
   .option("api-key", {
     describe:
-      "API token with Torrents capability. Also environ-defined as RED_API_KEY",
+      "API token with 'Torrents' capability. Also environ-defined as RED_API_KEY",
   })
   .option("torrent-dir", {
     alias: "o",
@@ -526,7 +526,7 @@ async function main(inDir) {
     console.log("[-] Uploading...")
     await redAPI.upload(uploadOpts)
   }
-  console.log("[-] Write torrents...")
+  console.log(`[-] Write torrents to ${TORRENT_DIR}/...`)
   await Promise.all(
     files.map(({ fileName, postData }) =>
       fs.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input),
