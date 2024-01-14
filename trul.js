@@ -98,6 +98,9 @@ const TRANSCODE_DIR = argv["transcode-dir"]
 // Ready torrents end here (rtorrent watches this dir and auto adds torrents)
 const TORRENT_DIR = argv["torrent-dir"]
 
+// identifier of the torrent.
+const INFO_HASH = argv['info-hash']
+
 async function ensureDir(dir) {
   const stats = await fs.stat(dir, { throwIfNoEntry: false })
   if (!stats) {
@@ -247,14 +250,14 @@ async function probeMediaFile(path) {
   return JSON.parse(stdout)
 }
 
-const filterSameEditionGroupAs = ({
+function filterSameEditionGroupAs({
   media,
   remasterTitle,
   remasterCatalogueNumber,
   remasterYear,
   remasterRecordLabel,
-}) =>
-  function filterSameEdition(torrent) {
+}) {
+  return (torrent) => {
     if (torrent.media !== media) return false
     // Sometimes special chars are html-entity encoded
     // e.g., "L&oslash;msk" vs "Lømsk"
@@ -266,6 +269,7 @@ const filterSameEditionGroupAs = ({
     if (torrent.remasterYear !== remasterYear) return false
     return true
   }
+}
 
 const toCamelCase = (str) =>
   str
@@ -361,7 +365,7 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
 }
 
 async function main(inDir) {
-  let infoHash = argv['info-hash']
+  let infoHash = INFO_HASH;
   if (!infoHash) {
     // if the folder has an origin.yaml file, left there by gazelle-origin, we
     // we use the infoHash it specifies as fallback.
