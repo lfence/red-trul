@@ -1,26 +1,27 @@
-# red-trul: RED TRanscode-UpLoad
-This little utility 
+# red-trul: RED TRanscode & UpLoad
+This little utility ...
 - *Conditionally* transcodes a given flac release, generates and uploads torrents.
-- Requires `'Torrents'` capability from RED.
 - Detects the "edition group" (e.g., "remaster" or "other media") at RED
-- Transcodes FLAC16 (`"Lossless"`) and FLAC24 (`"24-bit Lossess"`) to FLAC16 (for FLAC24), `"MP3 (320)"` and `"MP3 (V0)"` --- only if there's no current item in the edition group of the particular format and/or preset.
-- Generates torrent files (using `webtorrent/create-torrent`) and uploads to RED.
-- API client uses `axios`. Requires token via `"Authorization:"` HTTP header.
-
-*The tool tries to not break any rules, for example by avoiding inputs with
-missing or bad tagging, but the user of this tool is liable for her own
-uploads.*
+- Transcodes `"Lossless"` (FLAC 16-bit) and `"24-bit Lossess"` (FLAC 24-bit) to
+  `"Lossless"` (for FLAC24), `"MP3 (320)"` and `"MP3 (V0)"` --- only if there's
+  no current item in the edition group of the particular format and/or preset.
+- Generates torrents with `webtorrent/create-torrent`.
+- Talks to RED API with `axios`. 
+  * Requires token via `"Authorization:"` HTTP header.
+  * Token requires `'Torrents'` capability.
+- *Tries to not break any rules.*
+  * For example, not handling releases with missing or bad tagging. The end-user is liable for their own actions
 
 
 ## Installing
 
 You need:
-- nodejs
-- flac
-- lame
-- sox
-- ffmpeg
-- git
+- `nodejs`
+- `flac`
+- `lame`
+- `sox`
+- `ffmpeg`
+- `git`
 
 ```bash
 git clone https://github.com/lfence/red-trul && cd ./red-trul
