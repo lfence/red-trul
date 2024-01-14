@@ -1,20 +1,18 @@
 # red-trul: RED TRanscode & UpLoad
-This little utility ...
-- *Conditionally* transcodes a given flac release, generates and uploads torrents.
-- Detects the "edition group" (e.g., "remaster" or "other media") at RED
-- Transcodes `"Lossless"` (FLAC 16-bit) and `"24-bit Lossess"` (FLAC 24-bit) to
-  `"Lossless"` (for FLAC24), `"MP3 (320)"` and `"MP3 (V0)"` --- only if there's
-  no current item in the edition group of the particular format and/or preset.
-- Copies images files from the original.
-- Generates torrents with `webtorrent/create-torrent`.
-- Talks to RED API with `axios`. 
-  * Requires token via `"Authorization:"` HTTP header.
-  * Token requires `'Torrents'` capability.
-- *Tries to not break any rules.*
-  * For example, not handling releases with missing or bad tagging. The end-user is liable for their own actions
 
+`red-trul` is a lightweight utility designed to non-interactively conditionally transcode FLAC releases, generating and uploading torrents.
 
-## Installing
+- Detects the edition and media (_edition group_) of a release.
+- Transcodes `Lossless` and `24-bit Lossless` to `Lossless`, `MP3 (320)`, and `MP3 (V0)` when the edition group lacks the specific transcode.
+- Copies image files from the original, excluding everything else.
+- Maintains the original folder structure.
+- Rejects releases with bad tagging or incorrect bit-rate (for 24-bit FLAC).
+
+## API access
+Requires an API key with _Torrents_ capability, created from the settings page
+at RED. No further authorization is needed.
+
+## Install
 
 You need:
 - `nodejs`
@@ -23,6 +21,7 @@ You need:
 - `sox`
 - `ffmpeg`
 - `git`
+- `perl`
 
 ```bash
 git clone https://github.com/lfence/red-trul && cd ./red-trul
@@ -31,7 +30,7 @@ git submodule update --init --recursive .
 npm install
 ```
 
-## Usage
+## Use
 
 ```
 Usage: trul.js [OPTIONS] flac-dir
@@ -56,45 +55,43 @@ Options:
 
 ```bash
 ./trul.js --info-hash=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-    --torrent-dir=/home/lfen/rtorrent/listen \
+    --torrent-dir=/home/lfen/rtorrent/watch \
     '/home/lfen/Music/TNO Project - There Is No Obsession EP (Flac24)'
-[-] using announce: https://flacsfor.me/f408ae911726f77c9e29ee17906ec1db/announce
-[-] fetch torrent info...
-[-] analyze filelist...
-[-] ffprobe 6 files...
-[+] Required tags are present, would transcode this
-[-] permalink: https://redacted.ch/torrents.php?torrentid=4521975
-[-] grouplink: https://redacted.ch/torrents.php?id=2123754
-[-] fetch torrentgroup...
-[-] Transcoding /home/lfen/Music/TNO Project - There's No Obsession (2019) - WEB FLAC
-[-] Transcoding 01. TNO Project - Eradicating Deviants.flac...
-[-] Transcoding 02. TNO Project - Oneirology (Dance 4 Me).flac...
-[-] Transcoding 03. TNO Project - Exitus Letalis.flac...
-[-] Transcoding 04. TNO Project - Mendacium & Spem.flac...
-[-] Transcoding 05. TNO Project - Neural Interrogation.flac...
-[-] Transcoding 06. TNO Project - N05A (Who Are U).flac...
-[-] Transcoding /home/lfen/Music/TNO Project - There's No Obsession (2019) - WEB V0
->> [3140914] Using 4 transcoding processes.
-
-[-] Transcoding /home/lfen/Music/TNO Project - There's No Obsession (2019) - WEB 320
->> [3140942] Using 4 transcoding processes.
-
-[-] Uploading...
-[-] Write torrents...
-[*] Done!
+# [-] using announce: https://flacsfor.me/f408ae911726f77c9e29ee17906ec1db/announce
+# [-] fetch torrent info...
+# [-] analyze filelist...
+# [-] ffprobe 6 files...
+# [+] Required tags are present, would transcode this
+# [-] permalink: https://redacted.ch/torrents.php?torrentid=4521975
+# [-] grouplink: https://redacted.ch/torrents.php?id=2123754
+# [-] fetch torrentgroup...
+# [-] Transcoding /home/lfen/Music/TNO Project - There's No Obsession (2019) - WEB FLAC
+# [-] Transcoding 01. TNO Project - Eradicating Deviants.flac...
+# [-] Transcoding 02. TNO Project - Oneirology (Dance 4 Me).flac...
+# [-] Transcoding 03. TNO Project - Exitus Letalis.flac...
+# [-] Transcoding 04. TNO Project - Mendacium & Spem.flac...
+# [-] Transcoding 05. TNO Project - Neural Interrogation.flac...
+# [-] Transcoding 06. TNO Project - N05A (Who Are U).flac...
+# [-] Transcoding /home/lfen/Music/TNO Project - There's No Obsession (2019) - WEB V0
+# >> [3140914] Using 4 transcoding processes.
+#
+# [-] Transcoding /home/lfen/Music/TNO Project - There's No Obsession (2019) - WEB 320
+# >> [3140942] Using 4 transcoding processes.
+#
+# [-] Uploading...
+# [-] Write torrents to /home/lfen/rtorrent/watch/...
+# [*] Done!
 ```
+#### Issue with MP3 ID3v2 Tags and Foreign (UTF-16) Characters
 
-#### Issue with mp3 id3v2 tags and foreign (utf-16) characters
+`id3v23_unsync` behavior prevents ancient (pre-ID3) MP3 players from playing back ID3 tags that as if they were sound.
+However, some ID3v2 tag decoders of modern MP3 players actually fail at undoing the unsync bytes correctly, sometimes resulting in crashes.
 
-Remove unsync behavior for ancient (pre-id3) mp3 players. This fixes a bug with
-special characters in tags. Some MP3 modern players would even crash because
-incorrectly handling "unsynced" tags. The downside of not unsyncing is that the
-ancient mp3 players may produce some "beeps" and "bops" while trying playback
-tag metadata before the actual song starts. I think this is better than a modern
-mp3 player in software crashes for misinterpreting the tag length...
+Therefore, disable `id3v23_unsync`, by run the following line
 
-```
+```bash
 sed -i '/use MP3::Tag;/aMP3::Tag->config(id3v23_unsync => 0);' flac2mp3/flac2mp3.pl
+# Alt.: Add `MP3::Tag->config(id3v23_unsync => 0);` right after `use MP3::Tag;`
 ```
 
 ## Advanced: Toolchain
@@ -115,7 +112,7 @@ You can have rtorrent do two things:
 ```
 # rtorrent.rc
 
-schedule2 = watch_directory_red, 10, 10, ((load.start_verbose, (cat,"/home/lfence/rtorrent/listen/", "*.torrent"), "d.delete_tied="))
+schedule2 = watch_directory_red, 10, 10, ((load.start_verbose, (cat,"/home/lfen/rtorrent/listen/", "*.torrent"), "d.delete_tied="))
 method.set_key = event.download.finished,postrun,"execute2={~/postdl.bash,$d.base_path=,$d.hash=,$session.path=}"
 ```
 
