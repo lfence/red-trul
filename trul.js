@@ -6,8 +6,6 @@ const os = require("os")
 const pkg = require("./package.json")
 const _execFile = require("child_process").execFile
 const yargs = require("yargs")
-const { decode } = require("html-entities")
-
 const initApi = require("./red-api")
 
 const createTorrent = require("util").promisify(require("create-torrent"))
@@ -261,10 +259,10 @@ function filterSameEditionGroupAs({
     if (torrent.media !== media) return false
     // Sometimes special chars are html-entity encoded
     // e.g., "L&oslash;msk" vs "Lømsk"
-    if (decode(torrent.remasterTitle) !== remasterTitle) return false
+    if (torrent.remasterTitle !== remasterTitle) return false
     if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber)
       return false
-    if (decode(torrent.remasterRecordLabel) !== remasterRecordLabel)
+    if (torrent.remasterRecordLabel !== remasterRecordLabel)
       return false
     if (torrent.remasterYear !== remasterYear) return false
     return true
@@ -319,16 +317,16 @@ async function analyzeFileList(inDir, fileList) {
       const m = /(^.*){{{([0-9]*)}}}$/.exec(e)
       return [m[1], m[2]]
     })
-    .map(([filename]) => decode(filename))
+    .map(([filename]) => filename)
     .filter((name) => /\.flac$/.test(name))
 
-  console.log(`[-] ffprobe ${flacs.length} files...`)
+  console.log(`[-] ffprobe (${flacs.length} flacs)...`)
   const results = []
 
   for (const path of flacs) {
     const absPath = `${inDir}/${path}`
 
-    // this was originally in parallel, but for > 100 files it became flaky..
+    // this was originally in parallel, but for >100 files it became flaky..
     const info = await probeMediaFile(absPath)
     const tags = Object.keys(info.format.tags).map((key) => key.toUpperCase())
     if (!["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))) {

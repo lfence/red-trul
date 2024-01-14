@@ -5,6 +5,7 @@ This little utility ...
 - Transcodes `"Lossless"` (FLAC 16-bit) and `"24-bit Lossess"` (FLAC 24-bit) to
   `"Lossless"` (for FLAC24), `"MP3 (320)"` and `"MP3 (V0)"` --- only if there's
   no current item in the edition group of the particular format and/or preset.
+- Copies images files from the original.
 - Generates torrents with `webtorrent/create-torrent`.
 - Talks to RED API with `axios`. 
   * Requires token via `"Authorization:"` HTTP header.
