@@ -2,49 +2,48 @@ const axios = require("axios").default
 const q = require("querystring")
 const FormData = require("form-data")
 const pkg = require("./package.json")
-const he = require("he");
+const he = require("he")
 
 const DEFAULT_OPTIONS = {
-  decodeEntities: true
-
+  decodeEntities: true,
 }
 
 /* Recurses over an entire (acyclic) object. Mutates object entries in-place. */
 function decodeEntities(obj) {
   if (obj === null) {
-    return;
+    return
   }
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === 'string') {
-      obj[key] = he.decode(value);
+    if (typeof value === "string") {
+      obj[key] = he.decode(value)
     } else if (Array.isArray(value)) {
       // If the property is an array, decode each string element
-      obj[key] = value.map(item => {
-        if (typeof item === 'string') {
-          return he.decode(item);
-        } else if (typeof item === 'object') {
+      obj[key] = value.map((item) => {
+        if (typeof item === "string") {
+          return he.decode(item)
+        } else if (typeof item === "object") {
           // If the element is an object, recursively decode its strings
-          decodeEntities(item);
+          decodeEntities(item)
         }
-        return item;
-      });
-    } else if (typeof value === 'object') {
+        return item
+      })
+    } else if (typeof value === "object") {
       // If the property is an object, recursively decode its strings
-      decodeEntities(value);
+      decodeEntities(value)
     }
   }
 }
 
-function initAPI(API_KEY, _options={}) {
+function initAPI(API_KEY, _options = {}) {
   const options = {
     ...DEFAULT_OPTIONS,
-    ..._options
+    ..._options,
   }
 
   const REDAPI = axios.create({
     baseURL: process.env.RED_API || "https://redacted.ch",
     headers: {
-      "Authorization": API_KEY,
+      Authorization: API_KEY,
       "user-agent": `${pkg.name}@${pkg.version}`,
     },
     validateStatus: (status) => status < 500,
@@ -52,26 +51,28 @@ function initAPI(API_KEY, _options={}) {
 
   REDAPI.interceptors.response.use(function (response) {
     if (response.data?.status !== "success") {
-      const {method, url} = response.config;
+      const { method, url } = response.config
       throw new Error(`${method} ${url}: ${response.data.status}`)
     }
     if (options.decodeEntities) {
-      decodeEntities(response.data);
+      decodeEntities(response.data)
     }
-    return response;
+    return response
   })
 
   async function index() {
     const resp = await REDAPI.get(`/ajax.php?action=index`)
 
-    return resp.data.response;
+    return resp.data.response
   }
 
   async function torrent({ hash }) {
-    const resp = await REDAPI.get(`/ajax.php?${q.encode({
-      action: "torrent",
-      hash,
-    })}`)
+    const resp = await REDAPI.get(
+      `/ajax.php?${q.encode({
+        action: "torrent",
+        hash,
+      })}`,
+    )
 
     return resp.data.response
   }

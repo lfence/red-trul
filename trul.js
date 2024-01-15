@@ -14,11 +14,12 @@ const argv = yargs
   .usage("Usage: $0 [OPTIONS] flac-dir")
   .option("info-hash", {
     alias: "i",
-    describe: "Use the given info hash."
+    describe:
+      "Use the given info hash. Required unless an origin.yaml exists in flac-dir.",
   })
   .option("api-key", {
     describe:
-      "API token with 'Torrents' capability. Also environ-defined as RED_API_KEY",
+      "API token with 'Torrents' capability. environ-definable as RED_API_KEY",
   })
   .option("torrent-dir", {
     alias: "o",
@@ -97,7 +98,7 @@ const TRANSCODE_DIR = argv["transcode-dir"]
 const TORRENT_DIR = argv["torrent-dir"]
 
 // identifier of the torrent.
-const INFO_HASH = argv['info-hash']
+const INFO_HASH = argv["info-hash"]
 
 async function ensureDir(dir) {
   const stats = await fs.stat(dir, { throwIfNoEntry: false })
@@ -262,8 +263,7 @@ function filterSameEditionGroupAs({
     if (torrent.remasterTitle !== remasterTitle) return false
     if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber)
       return false
-    if (torrent.remasterRecordLabel !== remasterRecordLabel)
-      return false
+    if (torrent.remasterRecordLabel !== remasterRecordLabel) return false
     if (torrent.remasterYear !== remasterYear) return false
     return true
   }
@@ -363,7 +363,7 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
 }
 
 async function main(inDir) {
-  let infoHash = INFO_HASH;
+  let infoHash = INFO_HASH
   if (!infoHash) {
     // if the folder has an origin.yaml file, left there by gazelle-origin, we
     // we use the infoHash it specifies as fallback.
