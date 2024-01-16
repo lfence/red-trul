@@ -8,7 +8,8 @@ const DEFAULT_OPTIONS = {
   decodeEntities: true,
 }
 
-/* Recurses over an entire (acyclic) object. Mutates object entries in-place. */
+/* Recurses over an entire (acyclic) object. Mutates object entries in-place.
+ * Decodes html-entities, e.g., "L&oslash;msk" to "Lømsk" */
 function decodeEntities(obj) {
   if (obj === null) {
     return
@@ -66,13 +67,18 @@ function initAPI(API_KEY, _options = {}) {
     return resp.data.response
   }
 
-  async function torrent({ hash }) {
-    const resp = await REDAPI.get(
-      `/ajax.php?${q.encode({
-        action: "torrent",
-        hash,
-      })}`,
-    )
+  async function torrent({ id, hash }) {
+    const query = {
+      action: "torrent",
+    }
+    if (id) {
+      query.id = id
+    } else if (hash) {
+      query.hash = hash
+    } else {
+      throw new Error("args")
+    }
+    const resp = await REDAPI.get(`/ajax.php?${q.encode(query)}`)
 
     return resp.data.response
   }
