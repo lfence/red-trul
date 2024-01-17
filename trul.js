@@ -7,7 +7,6 @@ const pkg = require("./package.json")
 const _execFile = require("child_process").execFile
 const yargs = require("yargs")
 const initApi = require("./red-api")
-
 const createTorrent = require("util").promisify(require("create-torrent"))
 
 const argv = yargs
@@ -16,6 +15,9 @@ const argv = yargs
     alias: "i",
     describe:
       "Use the given info hash. Required unless an origin.yaml exists in flac-dir.",
+  })
+  .option("torrent-id", {
+    describe: "Use the given torrent id. Alternative to --info-hash.",
   })
   .option("api-key", {
     describe:
@@ -34,6 +36,10 @@ const argv = yargs
   .option("transcode-dir", {
     alias: "t",
     describe: "Output directory of transcodes",
+  })
+  .option("no-flac", {
+    describe: "Don't transcode into FLAC",
+    boolean: true,
   })
   .option("no-v0", {
     describe: "Don't transcode into V0",
@@ -77,7 +83,11 @@ if (argv["320"] === false) {
   mp3presets.push({ encoding: "320", preset: "320" })
 }
 
-const nproc = os.cpus().length
+if (!argv._[0]) {
+  console.error(`No input, nothing to do. Try '--help'`)
+  process.exit(1)
+}
+const FLAC_DIR = argv._[0].replace(/\/$/, "")
 
 // API_KEY requires 'Torrents' permission.
 const API_KEY = argv["api-key"] || process.env.RED_API_KEY
@@ -86,22 +96,86 @@ if (!API_KEY) {
   process.exit(1)
 }
 
+/**
+ * Here's the RED API client.
+ */
 const redAPI = initApi(API_KEY)
 
-// Will set it if unset
-let ANNOUNCE_URL = argv["announce"]
-
 // Transcodes end here. If unset they end up next to the input dir
-const TRANSCODE_DIR = argv["transcode-dir"]
+const TRANSCODE_DIR = argv["transcode-dir"] || path.dirname(FLAC_DIR)
 
 // Ready torrents end here (rtorrent watches this dir and auto adds torrents)
 const TORRENT_DIR = argv["torrent-dir"]
 
-// identifier of the torrent.
-const INFO_HASH = argv["info-hash"]
+// Using flac2mp3 because it's great at dealing with tagging. However, it could
+// just write the tags with lame and drop the perl dependency.
+const FLAC2MP3_PATH = `${__dirname}/flac2mp3/flac2mp3.pl`
+
+async function tryReadFile(path) {
+  try {
+    return await fs.readFile(path)
+  } catch (e) {
+    return null
+  }
+}
+
+async function tryStat(path) {
+  try {
+    return await fs.stat(path)
+  } catch (e) {
+    return null
+  }
+}
+
+async function getAnnounceURL() {
+  if (argv["announce"]) {
+    return argv["announce"]
+  }
+  try {
+    const { passkey } = await redAPI.index()
+    return `https://flacsfor.me/${passkey}/announce`
+  } catch (e) {
+    console.error(`Can't GET ?action=index: ${e.message}`)
+    process.exit(1)
+  }
+}
+
+async function getTorrentQuery() {
+  if (argv["info-hash"]) {
+    return { hash: argv["info-hash"] }
+  }
+
+  if (argv["torrent-id"]) {
+    return { id: argv["torrent-id"] }
+  }
+
+  // if the folder has an origin.yaml or origin.json file, by gazelle-origin or
+  // varroa we can use that instead.
+  const originYaml = await tryReadFile(`${FLAC_DIR}/origin.yaml`)
+  if (originYaml) {
+    const parsed = yaml.parse(originYaml.toString("utf-8"))
+    if (parsed["Format"] !== "FLAC") {
+      console.log("[-] Not a FLAC, not interested.")
+      process.exit(0)
+    }
+    return { hash: parsed["Info hash"] }
+  }
+
+  const originJson = await tryReadFile(`${FLAC_DIR}/origin.json`) // varroa produced
+  if (originJson) {
+    const parsed = JSON.parse(originJson)
+    // I have no idea what "tracker" will say here, so just guessing
+    const id = parsed.known_origins.find((o) => o.tracker === "RED")
+    if (id) {
+      return { id }
+    }
+  }
+  console.error("[!] Unable to find an info hash or id.")
+  process.exit(1)
+}
 
 async function ensureDir(dir) {
-  const stats = await fs.stat(dir, { throwIfNoEntry: false })
+  const stats = await tryStat(dir)
   if (!stats) {
     console.error(`${dir} does not exist! Please create it.`)
     process.exit(1)
@@ -111,30 +185,6 @@ async function ensureDir(dir) {
     process.exit(1)
   }
 }
-
-async function checkArgs() {
-  if (argv._.length == 0) {
-    console.error(`No inputs, nothing to do. Try '--help'`)
-    process.exit(1)
-  }
-  if (TRANSCODE_DIR) {
-    // not required
-    await ensureDir(TRANSCODE_DIR)
-  }
-  await ensureDir(TORRENT_DIR)
-}
-
-const FLAC2MP3_PATH =
-  process.env.FLAC2MP3 || `${__dirname}/flac2mp3/flac2mp3.pl`
-
-const sanitizeFilename = (filename) =>
-  filename
-    .replace(/\//g, "∕") // Note that is not a normal / but a utf-8 one
-    .replace(/^~/, "")
-    .replace(/\.$/g, "_")
-    .replace(/[\x01-\x1f]/g, "_")
-    .replace(/[<>:"?*|]/g, "_")
-    .trim()
 
 function execFile(cmd, args, mute) {
   return new Promise((resolve, reject) => {
@@ -166,7 +216,7 @@ function execFile(cmd, args, mute) {
 }
 
 const mkdirpMaybe = (() => {
-  const exists = {}
+  const exists = {} // remember just-created ones.
   return async function mkdirpMaybe(dir) {
     if (!exists[dir]) {
       await fs.mkdir(dir, { recursive: true })
@@ -175,7 +225,7 @@ const mkdirpMaybe = (() => {
   }
 })()
 
-// gives an iterator<{file, dir}>, where entries exclude baseDir.
+// gives an iterator<{file, dir}>. Returned filenames exclude baseDir.
 async function* traverseFiles(baseDir) {
   for (let dirent of await fs.readdir(baseDir, { withFileTypes: true })) {
     const fpath = path.join(baseDir, dirent.name)
@@ -256,35 +306,14 @@ function filterSameEditionGroupAs({
   remasterYear,
   remasterRecordLabel,
 }) {
-  return (torrent) => {
-    if (torrent.media !== media) return false
-    // Sometimes special chars are html-entity encoded
-    // e.g., "L&oslash;msk" vs "Lømsk"
-    if (torrent.remasterTitle !== remasterTitle) return false
-    if (torrent.remasterCatalogueNumber !== remasterCatalogueNumber)
-      return false
-    if (torrent.remasterRecordLabel !== remasterRecordLabel) return false
-    if (torrent.remasterYear !== remasterYear) return false
+  return (t) => {
+    if (t.media !== media) return false
+    if (t.remasterTitle !== remasterTitle) return false
+    if (t.remasterCatalogueNumber !== remasterCatalogueNumber) return false
+    if (t.remasterRecordLabel !== remasterRecordLabel) return false
+    if (t.remasterYear !== remasterYear) return false
     return true
   }
-}
-
-const toCamelCase = (str) =>
-  str
-    .split(" ")
-    .map((word) => word.toLowerCase().replace(/^./, (c) => c.toUpperCase()))
-    .join("")
-    .replace(/^./, (c) => c.toLowerCase())
-
-async function getOrigin(originPath) {
-  const origin = await fs.readFile(originPath)
-  const parsed = yaml.parse(origin.toString("utf-8"))
-
-  // parse and transform object keys, eg. o["Edition Year"] -> o.editionYear
-  return Object.fromEntries(
-    // API uses empty string but Origin gets null. Normalize
-    Object.entries(parsed).map(([k, v]) => [toCamelCase(k), v ?? ""]),
-  )
 }
 
 function formatArtist(group) {
@@ -294,9 +323,18 @@ function formatArtist(group) {
   else return "Various Artists"
 }
 
+const sanitizePath = (filename) =>
+  filename
+    .replace(/\//g, "∕") // Note that is not a normal / but a utf-8 one
+    .replace(/^~/, "")
+    .replace(/\.$/g, "_")
+    .replace(/[\x01-\x1f]/g, "_")
+    .replace(/[<>:"?*|]/g, "_")
+    .trim()
+
 function formatDirname(group, torrent, format) {
   // will make dirs for FLAC, V0 and 320 transcodes using this as base
-  let dirname = `${sanitizeFilename(`${formatArtist(group)} - ${group.name}`)}`
+  let dirname = `${formatArtist(group)} - ${group.name}`
   const year = torrent.remasterYear || group.year
   if (torrent.remasterTitle) {
     // e.g., "Special Edition"
@@ -307,7 +345,13 @@ function formatDirname(group, torrent, format) {
     dirname += ` (${year})`
   }
 
-  return `${dirname} - ${torrent.media} ${format}`
+  return sanitizePath(`${dirname} - ${torrent.media} ${format}`)
+}
+
+function formatMessage(torrent, command) {
+  return `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
+[b][code]transcode command:[/code][/b] [code]${command}[/code]
+[b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]`
 }
 
 async function analyzeFileList(inDir, fileList) {
@@ -320,9 +364,8 @@ async function analyzeFileList(inDir, fileList) {
     .map(([filename]) => filename)
     .filter((name) => /\.flac$/.test(name))
 
-  console.log(`[-] ffprobe (${flacs.length} flacs)...`)
+  console.log(`[-] Run ffprobe (${flacs.length} flacs)...`)
   const results = []
-
   for (const path of flacs) {
     const absPath = `${inDir}/${path}`
 
@@ -348,7 +391,14 @@ async function analyzeFileList(inDir, fileList) {
   return results
 }
 
+function formatPermalink(torrent) {
+  return `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
+}
+
 function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
+  if (argv["flac"] === false) {
+    return false;
+  }
   if (torrent.encoding !== "24bit Lossless") {
     // we only make flac16 out of flac24
     return false
@@ -359,80 +409,59 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
     return false
   }
 
-  return analyzedFiles.every(({ bitRate }) => bitRate == 24)
+  return analyzedFiles.every(({ bitRate }) => bitRate === 24)
 }
 
 async function main(inDir) {
-  let infoHash = INFO_HASH
-  if (!infoHash) {
-    // if the folder has an origin.yaml file, left there by gazelle-origin, we
-    // we use the infoHash it specifies as fallback.
-    const origin = await getOrigin(`${inDir}/origin.yaml`)
-    if (origin.format !== "FLAC") {
-      console.log("[-] Not a flac, not interested")
-      return
-    }
-    infoHash = origin.infoHash
+  if ((await tryStat(FLAC2MP3_PATH)) === null) {
+    console.error("[!] Fatal: missing flac2mp3, see README")
+    process.exit(1)
   }
 
-  const outBaseDirname = `${TRANSCODE_DIR || path.dirname(inDir)}`
+  await ensureDir(TRANSCODE_DIR)
+  await ensureDir(TORRENT_DIR)
 
-  if (!ANNOUNCE_URL) {
-    ANNOUNCE_URL = await (async () => {
-      try {
-        const { passkey } = await redAPI.index()
-        return `https://flacsfor.me/${passkey}/announce`
-      } catch (e) {
-        console.error(`Can't GET ?action=index: ${e.message}`)
-        process.exit(1)
-      }
-    })()
-  }
-  console.log(`[-] using announce: ${ANNOUNCE_URL}`)
+  const announce = await getAnnounceURL()
+  const torrentQuery = await getTorrentQuery()
 
-  console.log(`[-] fetch torrent info...`)
+  console.log(`[-] Fetch torrent...`)
   // get the current torrent
-  const { group, torrent } = await redAPI.torrent({ hash: infoHash })
+  const { group, torrent } = await redAPI.torrent(torrentQuery)
 
-  console.log(`[-] analyze filelist...`)
+  console.log(`[-] Analyze torrent.fileList...`)
   const analyzedFiles = await analyzeFileList(inDir, torrent.fileList)
-  console.log("[+] Required tags are present, would transcode this")
+  // if that didn't throw, tags should be OK.
+  console.log("[*] Required tags are present, would transcode this!")
 
-  const permalink = `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
-  console.log(`[-] permalink: ${permalink}`)
-  const grouplink = `https://redacted.ch/torrents.php?id=${group.id}`
-  console.log(`[-] grouplink: ${grouplink}`)
+  console.log(`[-] Permalink: ${formatPermalink(torrent)}`)
 
   // see what releases already exists for you.
-  console.log(`[-] fetch torrentgroup...`)
+  console.log(`[-] Fetch torrentgroup...`)
   const { torrents } = await redAPI.torrentgroup({ id: group.id })
 
   // torrents that belong to this edition (how they are groups by the website)
   const editionGroup = torrents.filter(filterSameEditionGroupAs(torrent))
 
   if (editionGroup.length === 0) {
-    throw Error("Edition group should at least contain the current release")
+    throw Error("[!] Edition group should at least contain the current release")
   }
 
   // torrents will be put in a temp directory before uploading,
   // after uploading they will be moved
   const transcodeTasks = []
-  const mkMessage = (command) =>
-    `[b][code]transcode source:[/code][/b] [url=${permalink}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
-[b][code]transcode command:[/code][/b] [code]${command}[/code]
-[b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]`
 
   if (shouldMakeFLAC(torrent, editionGroup, analyzedFiles)) {
     verboseLog("Will make FLAC 16")
     const outDir = path.join(
-      outBaseDirname,
+      TRANSCODE_DIR,
       formatDirname(group, torrent, "FLAC"),
     )
     transcodeTasks.push({
       outDir,
       doTranscode: () => makeFlacTranscode(outDir, inDir, analyzedFiles),
-      message: mkMessage(
-        `sox -G input.flac -b16 output.flac rate -v -L {sampleRate} dither`,
+      message: formatMessage(
+        torrent,
+        `sox -G in.flac -b16 out.flac rate -v -L rate dither`,
       ),
       format: "FLAC",
       bitrate: "Lossless",
@@ -446,20 +475,24 @@ async function main(inDir) {
       continue
     }
     const outDir = path.join(
-      outBaseDirname,
+      TRANSCODE_DIR,
       formatDirname(group, torrent, preset),
     )
     transcodeTasks.push({
       outDir,
       doTranscode: () =>
-        execFile(FLAC2MP3_PATH, [
-          "--quiet",
-          `--preset=${preset}`,
-          `--processes=${nproc}`,
-          inDir,
-          outDir,
-        ]),
-      message: mkMessage(`flac2mp3 --preset=${preset}`),
+        execFile(
+          FLAC2MP3_PATH,
+          [
+            "--quiet",
+            `--preset=${preset}`,
+            `--processes=${os.cpus().length}`,
+            inDir,
+            outDir,
+          ],
+          !VERBOSE,
+        ),
+      message: formatMessage(torrent, `flac2mp3 --preset=${preset}`),
       format: "MP3",
       bitrate: encoding,
     })
@@ -474,7 +507,7 @@ async function main(inDir) {
     const torrent = await createTorrent(outDir, {
       private: true,
       createdBy: `${pkg.name}@${pkg.version}`,
-      announce: ANNOUNCE_URL,
+      announce,
       info: { source: "RED" },
     })
     files.push({
@@ -523,7 +556,7 @@ async function main(inDir) {
 
   // yargs does magic and inverts --no-upload..
   if (argv["upload"] === false) {
-    console.log("[-] Skip upload...")
+    verboseLog("Skip upload...")
   } else {
     console.log("[-] Uploading...")
     await redAPI.upload(uploadOpts)
@@ -538,7 +571,5 @@ async function main(inDir) {
 }
 
 ;(async () => {
-  await checkArgs()
-  const dir = argv._[0]
-  await main(dir.replace(/\/$/, "")).catch(console.error)
+  await main(FLAC_DIR).catch(console.error)
 })()
