@@ -133,8 +133,8 @@ async function getTorrentQuery() {
     return { id: argv["torrent-id"] }
   }
 
-  // if the folder has an origin.yaml or origin.json file, by gazelle-origin or
-  // varroa we can use that instead.
+  // if the folder has an origin.yaml or origin.json file by gazelle-origin, we
+  // can use that instead.
   const originYaml = await tryReadFile(`${FLAC_DIR}/origin.yaml`)
   if (originYaml) {
     const parsed = yaml.parse(originYaml.toString("utf-8"))
@@ -145,15 +145,6 @@ async function getTorrentQuery() {
     return { hash: parsed["Info hash"] }
   }
 
-  const originJson = await tryReadFile(`${FLAC_DIR}/origin.json`) // varroa produced
-  if (originJson) {
-    const parsed = JSON.parse(originJson)
-    // I have no idea what "tracker" will say here, so just guessing
-    const id = parsed.known_origins.find((o) => o.tracker === "RED")
-    if (id) {
-      return { id }
-    }
-  }
   console.error("[!] Unable to find an info hash or id.")
   process.exit(1)
 }
