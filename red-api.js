@@ -52,8 +52,9 @@ function initAPI(API_KEY, _options = {}) {
 
   REDAPI.interceptors.response.use(function (response) {
     if (response.data?.status !== "success") {
+      // mind that the `response` is `AxiosResponse`.
       const { method, url } = response.config
-      throw new Error(`${method} ${url}: ${response.data.status}`)
+      throw new Error(`${method} ${url}: ${response.data.status}: ${response.data.response}`)
     }
     if (options.decodeEntities) {
       decodeEntities(response.data)
