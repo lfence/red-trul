@@ -8,10 +8,6 @@ const pkg = JSON.parse(
   readFileSync(path.join(path.dirname(process.argv[1]), "package.json")),
 )
 
-const DEFAULT_OPTIONS = {
-  decodeEntities: true,
-}
-
 /* Recurses over an entire (acyclic) object. Mutates object entries in-place.
  * Decodes html-entities, e.g., "L&oslash;msk" to "Lømsk" */
 function decodeEntities(obj) {
@@ -39,40 +35,42 @@ function decodeEntities(obj) {
   }
 }
 
-export default function initAPI(API_KEY, _options = {}) {
-  const options = {
-    ...DEFAULT_OPTIONS,
-    ..._options,
+export default class REDAPIClient {
+  constructor(API_KEY, _options = {}) {
+    const options = {
+      decodeEntities: true,
+      ..._options,
+    }
+
+    const REDAPI = axios.create({
+      baseURL: process.env.RED_API || "https://redacted.ch",
+      headers: {
+        Authorization: API_KEY,
+        "user-agent": `${pkg.name}@${pkg.version}`,
+      },
+      validateStatus: (status) => status < 500,
+    })
+
+    REDAPI.interceptors.response.use(function (response) {
+      if (response.data?.status !== "success") {
+        // mind that the `response` is `AxiosResponse`.
+        const { method, url } = response.config
+        throw new Error(`${method} ${url}: ${JSON.stringify(response.data)}`)
+      }
+      if (options.decodeEntities) {
+        decodeEntities(response.data)
+      }
+      return response
+    })
   }
 
-  const REDAPI = axios.create({
-    baseURL: process.env.RED_API || "https://redacted.ch",
-    headers: {
-      Authorization: API_KEY,
-      "user-agent": `${pkg.name}@${pkg.version}`,
-    },
-    validateStatus: (status) => status < 500,
-  })
-
-  REDAPI.interceptors.response.use(function (response) {
-    if (response.data?.status !== "success") {
-      // mind that the `response` is `AxiosResponse`.
-      const { method, url } = response.config
-      throw new Error(`${method} ${url}: ${JSON.stringify(response.data)}`)
-    }
-    if (options.decodeEntities) {
-      decodeEntities(response.data)
-    }
-    return response
-  })
-
-  async function index() {
+  async index() {
     const resp = await REDAPI.get(`/ajax.php?action=index`)
 
     return resp.data.response
   }
 
-  async function torrent({ id, hash }) {
+  async torrent({ id, hash }) {
     const query = {
       action: "torrent",
     }
@@ -88,7 +86,7 @@ export default function initAPI(API_KEY, _options = {}) {
     return resp.data.response
   }
 
-  async function torrentgroup({ id, hash }) {
+  async torrentgroup({ id, hash }) {
     const query = {
       action: "torrentgroup",
     }
@@ -104,7 +102,7 @@ export default function initAPI(API_KEY, _options = {}) {
     return resp.data.response
   }
 
-  async function upload(opts) {
+  async upload(opts) {
     const form = new FormData()
 
     for (const [k, v] of Object.entries(opts).filter(([, v]) => v)) {
@@ -127,11 +125,5 @@ export default function initAPI(API_KEY, _options = {}) {
     })
 
     return resp.data.response
-  }
-  return {
-    index,
-    torrent,
-    torrentgroup,
-    upload,
   }
 }

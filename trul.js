@@ -5,7 +5,7 @@ import path from "path"
 import os from "os"
 import { execFile as _execFile } from "child_process"
 import yargs from "yargs"
-import initApi from "./red-api.js"
+import REDAPIClient from "./red-api.js"
 import _createTorrent from "create-torrent"
 import { hideBin } from "yargs/helpers"
 
@@ -27,8 +27,7 @@ const argv = yargs(hideBin(process.argv))
     describe: "Use the given torrent id. Alternative to --info-hash.",
   })
   .option("api-key", {
-    describe:
-      "API token with 'Torrents' capability. environ-definable as RED_API_KEY",
+    describe: "'Torrents'-capable API token. env-definable as RED_API_KEY",
   })
   .option("torrent-dir", {
     alias: "o",
@@ -82,10 +81,8 @@ if (!API_KEY) {
   process.exit(1)
 }
 
-/**
- * Here's the RED API client.
- */
-const redAPI = initApi(API_KEY)
+// Here's the RED API client.
+const redAPI = new REDAPIClient(API_KEY)
 
 // Transcodes end here. If unset they end up next to the input dir
 const TRANSCODE_DIR = argv["transcode-dir"] || path.dirname(FLAC_DIR)
