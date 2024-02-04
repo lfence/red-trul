@@ -66,27 +66,11 @@ const verboseLog = (...args) => {
   if (VERBOSE) console.log("[VERBOSE]", ...args)
 }
 
-// supported presets <encoding,flac2mp3_preset>
-const mp3presets = []
-
-// Some stupid trick turns everything "--no-" into the opposite.
-// https://github.com/yargs/yargs/blob/main/docs/tricks.md
-if (argv["v0"] === false) {
-  verboseLog("[-] Won't transcode V0")
-} else {
-  mp3presets.push({ encoding: "V0 (VBR)", preset: "V0" })
-}
-
-if (argv["320"] === false) {
-  verboseLog("[-] Won't transcode 320")
-} else {
-  mp3presets.push({ encoding: "320", preset: "320" })
-}
-
 if (!argv._[0]) {
   console.error(`No input, nothing to do. Try '--help'`)
   process.exit(1)
 }
+
 const FLAC_DIR = argv._[0].replace(/\/$/, "")
 
 // API_KEY requires 'Torrents' permission.
@@ -461,23 +445,27 @@ async function main(inDir) {
       doTranscode: () => makeFlacTranscode(outDir, inDir, analyzedFiles),
       message: formatMessage(
         torrent,
-        `sox -G in.flac -b16 out.flac rate -v -L rate dither`,
+        `sox -G <in.flac> -b16 <out.flac> rate -v -L <rate> dither`,
       ),
       format: "FLAC",
       bitrate: "Lossless",
     })
   }
 
-  for (const { encoding, preset } of mp3presets) {
+  for (const [ skip, encoding, args, dirname ] of [
+    [ argv["v0"] === false, "V0 (VBR)", "-V 0 -h -S", formatDirname(group, torrent, "V0") ],
+    [ argv["320"] === false, "320", "-b 320 -h -S", formatDirname(group, torrent, "320") ]
+  ]) {
+    if (skip) {
+      verboseLog(`Won't transcode ${encoding}`)
+      continue
+    }
     if (editionGroup.some((torrent) => torrent.encoding === encoding)) {
       verboseLog(`${encoding} already exists. Skip`)
       // this encoding already available. no need to transcode
       continue
     }
-    const outDir = path.join(
-      TRANSCODE_DIR,
-      formatDirname(group, torrent, preset),
-    )
+    const outDir = path.join(TRANSCODE_DIR, dirname)
     transcodeTasks.push({
       outDir,
       doTranscode: () =>
@@ -485,14 +473,14 @@ async function main(inDir) {
           FLAC2MP3_PATH,
           [
             "--quiet",
-            `--preset=${preset}`,
+            `--lameargs=${args}`,
             `--processes=${os.cpus().length}`,
             inDir,
             outDir,
           ],
           !VERBOSE,
         ),
-      message: formatMessage(torrent, `flac2mp3 --preset=${preset}`),
+      message: formatMessage(torrent, `flac2mp3 --lameargs="${args}"`),
       format: "MP3",
       bitrate: encoding,
     })
