@@ -54,10 +54,13 @@ Options:
 ### Example
 
 ```bash
+# RED_API_KEY is set in env.
+# --announce=https://.../announce is optional is the 'User' capability is given.
+
 ./trul.js --info-hash=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
     --torrent-dir=/home/lfen/rtorrent/watch \
     '/home/lfen/Music/TNO Project - There Is No Obsession EP (Flac24)'
-# [-] using announce: https://flacsfor.me/f408ae911726f77c9e29ee17906ec1db/announce
+# [-] using announce: https://flacsfor.me/<redacted>/announce
 # [-] fetch torrent info...
 # [-] analyze filelist...
 # [-] ffprobe 6 files...
@@ -81,17 +84,6 @@ Options:
 # [-] Uploading...
 # [-] Write torrents to /home/lfen/rtorrent/watch/...
 # [*] Done!
-```
-#### Issue with MP3 ID3v2 Tags and Foreign (UTF-16) Characters
-
-`id3v23_unsync` behavior prevents ancient (pre-ID3) MP3 players from playing back ID3 tags that as if they were sound.
-However, some ID3v2 tag decoders of modern MP3 players actually fail at undoing the unsync bytes correctly, sometimes resulting in crashes.
-
-Therefore, disable `id3v23_unsync`, by run the following line
-
-```bash
-sed -i '/use MP3::Tag;/aMP3::Tag->config(id3v23_unsync => 0);' flac2mp3/flac2mp3.pl
-# Alt.: Add `MP3::Tag->config(id3v23_unsync => 0);` right after `use MP3::Tag;`
 ```
 
 ## Advanced: Toolchain
