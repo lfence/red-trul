@@ -1,15 +1,22 @@
 #!/usr/bin/env node
-const yaml = require("yaml")
-const fs = require("fs").promises
-const path = require("path")
-const os = require("os")
-const pkg = require("./package.json")
-const _execFile = require("child_process").execFile
-const yargs = require("yargs")
-const initApi = require("./red-api")
-const createTorrent = require("util").promisify(require("create-torrent"))
+import YAML from "yaml"
+import { promises as fs, readFileSync } from "fs"
+import path from "path"
+import os from "os"
+import { execFile as _execFile } from "child_process"
+import yargs from "yargs"
+import initApi from "./red-api.js"
+import _createTorrent from "create-torrent"
+import { hideBin } from "yargs/helpers"
 
-const argv = yargs
+const __dirname = path.dirname(process.argv[1])
+const pkg = JSON.parse(readFileSync(path.join(__dirname, "package.json")))
+const createTorrent = (...args) =>
+  new Promise((res, rej) =>
+    _createTorrent(...args, (err, data) => (err ? rej(err) : res(data))),
+  )
+
+const argv = yargs(hideBin(process.argv))
   .usage("Usage: $0 [OPTIONS] flac-dir")
   .option("info-hash", {
     alias: "i",
@@ -95,21 +102,18 @@ const TORRENT_DIR = argv["torrent-dir"]
 // just write the tags with lame and drop the perl dependency.
 const FLAC2MP3_PATH = `${__dirname}/flac2mp3/flac2mp3.pl`
 
-async function tryReadFile(path) {
-  try {
-    return await fs.readFile(path)
-  } catch (e) {
-    return null
+const tryFunc =
+  (f) =>
+  async (...args) => {
+    try {
+      return await f(...args)
+    } catch (e) {
+      return null
+    }
   }
-}
 
-async function tryStat(path) {
-  try {
-    return await fs.stat(path)
-  } catch (e) {
-    return null
-  }
-}
+const tryReadFile = tryFunc(fs.readFile)
+const tryStat = tryFunc(fs.stat)
 
 async function getAnnounceURL() {
   if (argv["announce"]) {
@@ -133,11 +137,11 @@ async function getTorrentQuery() {
     return { id: argv["torrent-id"] }
   }
 
-  // if the folder has an origin.yaml or origin.json file by gazelle-origin, we
+  // if the folder has an origin.yaml by gazelle-origin, we
   // can use that instead.
   const originYaml = await tryReadFile(`${FLAC_DIR}/origin.yaml`)
   if (originYaml) {
-    const parsed = yaml.parse(originYaml.toString("utf-8"))
+    const parsed = YAML.parse(originYaml.toString("utf-8"))
     if (parsed["Format"] !== "FLAC") {
       console.log("[-] Not a FLAC, not interested.")
       process.exit(0)
@@ -366,13 +370,12 @@ async function analyzeFileList(inDir, fileList) {
   return results
 }
 
-function formatPermalink(torrent) {
-  return `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
-}
+const formatPermalink = (torrent) =>
+  `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
 
 function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
   if (argv["flac"] === false) {
-    return false;
+    return false
   }
   if (torrent.encoding !== "24bit Lossless") {
     // we only make flac16 out of flac24
@@ -421,8 +424,8 @@ async function main(inDir) {
     throw Error("[!] Edition group should at least contain the current release")
   }
 
-  // torrents will be put in a temp directory before uploading,
-  // after uploading they will be moved
+  // torrents will be kept in memory before uploading, after uploading they will
+  // written
   const transcodeTasks = []
 
   if (shouldMakeFLAC(torrent, editionGroup, analyzedFiles)) {
@@ -443,9 +446,19 @@ async function main(inDir) {
     })
   }
 
-  for (const [ skip, encoding, args, dirname ] of [
-    [ argv["v0"] === false, "V0 (VBR)", "-V 0 -h -S", formatDirname(group, torrent, "V0") ],
-    [ argv["320"] === false, "320", "-b 320 -h -S", formatDirname(group, torrent, "320") ]
+  for (const [skip, encoding, args, dirname] of [
+    [
+      argv["v0"] === false,
+      "V0 (VBR)",
+      "-V 0 -h -S",
+      formatDirname(group, torrent, "V0"),
+    ],
+    [
+      argv["320"] === false,
+      "320",
+      "-b 320 -h -S",
+      formatDirname(group, torrent, "320"),
+    ],
   ]) {
     if (skip) {
       verboseLog(`Won't transcode ${encoding}`)

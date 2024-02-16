@@ -1,8 +1,12 @@
-const axios = require("axios").default
-const q = require("querystring")
-const FormData = require("form-data")
-const pkg = require("./package.json")
-const he = require("he")
+import axios from "axios"
+import q from "querystring"
+import FormData from "form-data"
+import he from "he"
+import path from "path"
+import { readFileSync } from "fs"
+const pkg = JSON.parse(
+  readFileSync(path.join(path.dirname(process.argv[1]), "package.json")),
+)
 
 const DEFAULT_OPTIONS = {
   decodeEntities: true,
@@ -35,7 +39,7 @@ function decodeEntities(obj) {
   }
 }
 
-function initAPI(API_KEY, _options = {}) {
+export default function initAPI(API_KEY, _options = {}) {
   const options = {
     ...DEFAULT_OPTIONS,
     ..._options,
@@ -54,7 +58,9 @@ function initAPI(API_KEY, _options = {}) {
     if (response.data?.status !== "success") {
       // mind that the `response` is `AxiosResponse`.
       const { method, url } = response.config
-      throw new Error(`${method} ${url}: ${response.data.status}: ${response.data.response}`)
+      throw new Error(
+        `${method} ${url}: ${response.data.status}: ${response.data.response}`,
+      )
     }
     if (options.decodeEntities) {
       decodeEntities(response.data)
@@ -131,5 +137,3 @@ function initAPI(API_KEY, _options = {}) {
     upload,
   }
 }
-
-module.exports = initAPI
