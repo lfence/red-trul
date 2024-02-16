@@ -310,17 +310,17 @@ const sanitizePath = (filename) =>
 function formatDirname(group, torrent, format) {
   // will make dirs for FLAC, V0 and 320 transcodes using this as base
   let dirname = `${formatArtist(group)} - ${group.name}`
-  const year = torrent.remasterYear || group.year
   if (torrent.remasterTitle) {
     // e.g., "Special Edition"
     dirname += ` (${torrent.remasterTitle})`
   }
 
+  const year = torrent.remasterYear || group.year
   if (year) {
     dirname += ` (${year})`
   }
 
-  return sanitizePath(`${dirname} - ${torrent.media} ${format}`)
+  return sanitizePath(`${dirname} [${torrent.media} ${format}]`)
 }
 
 function formatMessage(torrent, command) {
