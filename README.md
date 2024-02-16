@@ -37,13 +37,14 @@ Usage: trul.js [OPTIONS] flac-dir
 
 Options:
       --version        Show version number                             [boolean]
-  -i, --info-hash      Use the given info hash.
-      --api-key        API token with 'Torrents' capability. Also environ-defined
-                       as RED_API_KEY
+  -i, --info-hash      Use the given info hash. Required unless an origin.yaml e
+                       xists in flac-dir.
+      --torrent-id     Use the given torrent id. Alternative to --info-hash.
+      --api-key        API token with 'Torrents' capability. environ-definable a
+                       s RED_API_KEY
   -o, --torrent-dir    Where to output torrent files              [default: "."]
-  -a, --announce       Specify the full announce URL found on
-                       https://redacted.ch/upload.php
   -t, --transcode-dir  Output directory of transcodes
+      --no-flac        Don't transcode into FLAC                       [boolean]
       --no-v0          Don't transcode into V0                         [boolean]
       --no-320         Don't transcode into 320                        [boolean]
       --no-upload      Don't upload anything                           [boolean]

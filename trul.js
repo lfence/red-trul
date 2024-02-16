@@ -35,11 +35,6 @@ const argv = yargs(hideBin(process.argv))
     describe: "Where to output torrent files",
     default: ".",
   })
-  .option("announce", {
-    alias: "a",
-    describe:
-      "Specify the full announce URL found on https://redacted.ch/upload.php",
-  })
   .option("transcode-dir", {
     alias: "t",
     describe: "Output directory of transcodes",
@@ -114,19 +109,6 @@ const tryFunc =
 
 const tryReadFile = tryFunc(fs.readFile)
 const tryStat = tryFunc(fs.stat)
-
-async function getAnnounceURL() {
-  if (argv["announce"]) {
-    return argv["announce"]
-  }
-  try {
-    const { passkey } = await redAPI.index()
-    return `https://flacsfor.me/${passkey}/announce`
-  } catch (e) {
-    console.error(`Can't GET ?action=index: ${e.message}`)
-    process.exit(1)
-  }
-}
 
 async function getTorrentQuery() {
   if (argv["info-hash"]) {
@@ -399,7 +381,9 @@ async function main(inDir) {
   await ensureDir(TRANSCODE_DIR)
   await ensureDir(TORRENT_DIR)
 
-  const announce = await getAnnounceURL()
+  const { passkey } = await redAPI.index()
+  const announce = `https://flacsfor.me/${passkey}/announce`
+
   const torrentQuery = await getTorrentQuery()
 
   console.log(`[-] Fetch torrent...`)
