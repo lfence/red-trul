@@ -58,9 +58,7 @@ export default function initAPI(API_KEY, _options = {}) {
     if (response.data?.status !== "success") {
       // mind that the `response` is `AxiosResponse`.
       const { method, url } = response.config
-      throw new Error(
-        `${method} ${url}: ${response.data.status}: ${response.data.response}`,
-      )
+      throw new Error(`${method} ${url}: ${JSON.stringify(response.data)}`)
     }
     if (options.decodeEntities) {
       decodeEntities(response.data)

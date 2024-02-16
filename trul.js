@@ -547,5 +547,8 @@ async function main(inDir) {
 }
 
 ;(async () => {
-  await main(FLAC_DIR).catch(console.error)
+  await main(FLAC_DIR).catch((...err) => {
+    console.error(`${pkg.name}@${pkg.version} failed`)
+    console.error(...err)
+  })
 })()
