@@ -87,52 +87,14 @@ Options:
 # [*] Done!
 ```
 
-## Advanced: Toolchain
+## Advanced: post-download hook and watch directory.
+
+This script runs well non-interactively. Post-download example scripts are
+available for [qbittorrent](./qbittorrent-postdl.sh) and
+[rtorrent](./rtorrent-postdl.sh). Beside configuring a post-download script for
+the torrent client, also configure it to use the torrent-dir of trul as watch
+dir for new torrents, and download those to the transcode dir to start seeding.
+
 
 Use `flock.bash` to avoid running multiple instances of red-trul, but queue up
 jobs instead.
-
-red-trul is runs well non-interactively. The `rtorrent.rc` is similar
-to [gazelle-origin](https://github.com/x1ppy/gazelle-origin)'s. In fact, it will
-read `origin.yaml` as fallback if `--info-hash` is unspecified.
-
-You can have rtorrent do two things:
- - Run a script `postdl.bash`, which runs `trul` (via `flock.bash`) on finished
-     download.
- - Monitor a directory for new torrents that this tool generates. 
-
-
-```
-# rtorrent.rc
-
-schedule2 = watch_directory_red, 10, 10, ((load.start_verbose, (cat,"/home/lfen/rtorrent/listen/", "*.torrent"), "d.delete_tied="))
-method.set_key = event.download.finished,postrun,"execute2={~/postdl.bash,$d.base_path=,$d.hash=,$session.path=}"
-```
-
-The `postdl.bash` could look like this:
-
-```bash
-#!/bin/bash
-# either do this, or include --api-key for ./trul.js
-export RED_API_KEY=...
-
-# d.base_path
-BASE_PATH=$1
-# d.hash
-INFO_HASH=$2
-# session.path
-SESSION_PATH=$3
-
-TRUL=/some/path/red-trul/flock.bash
-TRANSCODE_DIR=/home/lfen/my_music
-TORRENT_DIR=/home/lfen/rtorrent/listen
-
-if ! grep flacsfor.me "$SESSION_PATH/$INFO_HASH.torrent"; then
-    # Not a RED torrent.
-    exit 0
-fi
-
-# Run in background to unblock rtorrent. Otherwise, rtorrent hook is blocked
-# until this script finishes.
-$TRUL --info-hash=$INFO_HASH --torrent-dir=$TORRENT_DIR "$BASE_PATH" & 
-```
