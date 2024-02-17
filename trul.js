@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-import YAML from "yaml"
-import { promises as fs, readFileSync } from "fs"
-import path from "path"
-import os from "os"
-import { execFile as _execFile } from "child_process"
-import yargs from "yargs"
 import REDAPIClient from "./red-api.js"
+import YAML from "yaml"
 import _createTorrent from "create-torrent"
+import os from "os"
+import path from "path"
+import yargs from "yargs"
+import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
+import { promises as fs, readFileSync, statSync } from "fs"
 
 const __dirname = path.dirname(process.argv[1])
 const pkg = JSON.parse(readFileSync(path.join(__dirname, "package.json")))
@@ -94,20 +94,7 @@ const TORRENT_DIR = argv["torrent-dir"]
 // just write the tags with lame and drop the perl dependency.
 const FLAC2MP3_PATH = `${__dirname}/flac2mp3/flac2mp3.pl`
 
-const tryFunc =
-  (f) =>
-  async (...args) => {
-    try {
-      return await f(...args)
-    } catch (e) {
-      return null
-    }
-  }
-
-const tryReadFile = tryFunc(fs.readFile)
-const tryStat = tryFunc(fs.stat)
-
-async function getTorrentQuery() {
+function getTorrentQuery() {
   if (argv["info-hash"]) {
     return { hash: argv["info-hash"] }
   }
@@ -116,31 +103,29 @@ async function getTorrentQuery() {
     return { id: argv["torrent-id"] }
   }
 
-  // if the folder has an origin.yaml by gazelle-origin, we
+  // if the folder has an origin.yaml file by gazelle-origin, we
   // can use that instead.
-  const originYaml = await tryReadFile(`${FLAC_DIR}/origin.yaml`)
-  if (originYaml) {
-    const parsed = YAML.parse(originYaml.toString("utf-8"))
-    if (parsed["Format"] !== "FLAC") {
-      console.log("[-] Not a FLAC, not interested.")
-      process.exit(0)
+  if (existsSync(`${FLAC_DIR}/origin.yaml`)) {
+    const originYaml = readFileSync(`${FLAC_DIR}/origin.yaml`)
+    if (originYaml) {
+      const parsed = YAML.parse(originYaml.toString("utf-8"))
+      if (parsed["Format"] !== "FLAC") {
+        throw new Error("[!] Not a FLAC, not interested.")
+      }
+      return { hash: parsed["Info hash"] }
     }
-    return { hash: parsed["Info hash"] }
   }
 
-  console.error("[!] Unable to find an info hash or id.")
-  process.exit(1)
+  throw new Error("[!] Unable to find an info hash or id.")
 }
 
-async function ensureDir(dir) {
-  const stats = await tryStat(dir)
+function ensureDir(dir) {
+  const stats = statSync(dir)
   if (!stats) {
-    console.error(`${dir} does not exist! Please create it.`)
-    process.exit(1)
+    throw new Error(`[!] ${dir} does not exist!`)
   }
   if (!stats.isDirectory()) {
-    console.error(`${dir} is not a directory.`)
-    process.exit(1)
+    throw new Error(`[!] ${dir} is not a directory.`)
   }
 }
 
@@ -281,7 +266,7 @@ function formatArtist(group) {
   else return "Various Artists"
 }
 
-const sanitizePath = (filename) =>
+const sanitizeFilename = (filename) =>
   filename
     .replace(/\//g, "∕") // Note that is not a normal / but a utf-8 one
     .replace(/^~/, "")
@@ -303,7 +288,7 @@ function formatDirname(group, torrent, format) {
     dirname += ` (${year})`
   }
 
-  return sanitizePath(`${dirname} [${torrent.media} ${format}]`)
+  return sanitizeFilename(`${dirname} [${torrent.media} ${format}]`)
 }
 
 function formatMessage(torrent, command) {
@@ -331,8 +316,7 @@ async function analyzeFileList(inDir, fileList) {
     const info = await probeMediaFile(absPath)
     const tags = Object.keys(info.format.tags).map((key) => key.toUpperCase())
     if (!["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))) {
-      console.error(`[!] Required tags are not present! check ${absPath}`)
-      throw new Error("Bad tags")
+      throw new Error(`[!] Required tags are not present! check ${absPath}`)
     }
     const flacStream = info.streams.find(
       ({ codec_name }) => codec_name === "flac",
@@ -370,18 +354,13 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
 }
 
 async function main(inDir) {
-  if ((await tryStat(FLAC2MP3_PATH)) === null) {
-    console.error("[!] Fatal: missing flac2mp3, see README")
-    process.exit(1)
-  }
-
-  await ensureDir(TRANSCODE_DIR)
-  await ensureDir(TORRENT_DIR)
+  ensureDir(FLAC2MP3_PATH)
+  ensureDir(TRANSCODE_DIR)
+  ensureDir(TORRENT_DIR)
 
   const { passkey } = await redAPI.index()
   const announce = `https://flacsfor.me/${passkey}/announce`
-
-  const torrentQuery = await getTorrentQuery()
+  const torrentQuery = getTorrentQuery()
 
   console.log(`[-] Fetch torrent...`)
   // get the current torrent
@@ -410,7 +389,6 @@ async function main(inDir) {
   const transcodeTasks = []
 
   if (shouldMakeFLAC(torrent, editionGroup, analyzedFiles)) {
-    verboseLog("Will make FLAC 16")
     const outDir = path.join(
       TRANSCODE_DIR,
       formatDirname(group, torrent, "FLAC"),
