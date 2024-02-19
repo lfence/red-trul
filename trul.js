@@ -354,7 +354,7 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
 }
 
 async function main(inDir) {
-  ensureDir(FLAC2MP3_PATH)
+  statSync(FLAC2MP3_PATH)
   ensureDir(TRANSCODE_DIR)
   ensureDir(TORRENT_DIR)
 

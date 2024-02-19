@@ -42,7 +42,7 @@ export default class REDAPIClient {
       ..._options,
     }
 
-    const REDAPI = axios.create({
+    this.apiClient = axios.create({
       baseURL: process.env.RED_API || "https://redacted.ch",
       headers: {
         Authorization: API_KEY,
@@ -51,7 +51,7 @@ export default class REDAPIClient {
       validateStatus: (status) => status < 500,
     })
 
-    REDAPI.interceptors.response.use(function (response) {
+    this.apiClient.interceptors.response.use(function (response) {
       if (response.data?.status !== "success") {
         // mind that the `response` is `AxiosResponse`.
         const { method, url } = response.config
@@ -65,7 +65,7 @@ export default class REDAPIClient {
   }
 
   async index() {
-    const resp = await REDAPI.get(`/ajax.php?action=index`)
+    const resp = await this.apiClient.get(`/ajax.php?action=index`)
 
     return resp.data.response
   }
@@ -81,7 +81,7 @@ export default class REDAPIClient {
     } else {
       throw new Error("args")
     }
-    const resp = await REDAPI.get(`/ajax.php?${q.encode(query)}`)
+    const resp = await this.apiClient.get(`/ajax.php?${q.encode(query)}`)
 
     return resp.data.response
   }
@@ -97,7 +97,7 @@ export default class REDAPIClient {
     } else {
       throw new Error("args")
     }
-    const resp = await REDAPI.get(`/ajax.php?${q.encode(query)}`)
+    const resp = await this.apiClient.get(`/ajax.php?${q.encode(query)}`)
 
     return resp.data.response
   }
@@ -118,7 +118,7 @@ export default class REDAPIClient {
       }
     }
 
-    const resp = await REDAPI.post(`/ajax.php?action=upload`, form, {
+    const resp = await this.apiClient.post(`/ajax.php?action=upload`, form, {
       headers: {
         ...form.getHeaders(),
       },
