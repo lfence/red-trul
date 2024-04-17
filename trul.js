@@ -7,7 +7,7 @@ import path from "path"
 import yargs from "yargs"
 import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
-import { promises as fs, readFileSync, statSync } from "fs"
+import { promises as fs, readFileSync, statSync, existsSync } from "fs"
 
 const __dirname = path.dirname(process.argv[1])
 const pkg = JSON.parse(readFileSync(path.join(__dirname, "package.json")))
