@@ -8,6 +8,8 @@ import yargs from "yargs"
 import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
 import { promises as fs, readFileSync, statSync, existsSync } from "fs"
+import debug from "debug"
+const verboseLog = debug("trul:cli")
 
 const __dirname = path.dirname(process.argv[1])
 const pkg = JSON.parse(readFileSync(path.join(__dirname, "package.json")))
@@ -16,12 +18,12 @@ const createTorrent = (...args) =>
     _createTorrent(...args, (err, data) => (err ? rej(err) : res(data))),
   )
 
-const argv = yargs(hideBin(process.argv))
+const { argv } = yargs(hideBin(process.argv))
   .usage("Usage: $0 [OPTIONS] flac-dir")
   .option("info-hash", {
     alias: "i",
     describe:
-      "Use the given info hash. Required unless an origin.yaml exists in flac-dir.",
+      "Torrent hash. Required unless an origin.yaml exists in flac-dir.",
   })
   .option("torrent-id", {
     describe: "Use the given torrent id. Alternative to --info-hash.",
@@ -54,23 +56,19 @@ const argv = yargs(hideBin(process.argv))
     describe: "Don't upload anything",
     boolean: true,
   })
-  .option("verbose", {
+  .option("always-transcode", {
     boolean: true,
-    describe: "Print more",
+    describe: "Always transcode (tags must be present)",
   })
   .help("h")
-  .alias("h", "help").argv
-
-const VERBOSE = argv["verbose"]
-
-const verboseLog = (...args) => {
-  if (VERBOSE) console.log("[VERBOSE]", ...args)
-}
+  .alias("h", "help")
 
 if (!argv._[0]) {
   console.error(`No input, nothing to do. Try '--help'`)
   process.exit(1)
 }
+
+const ALWAYS_TRANSCODE = argv["always-transcode"]
 
 const FLAC_DIR = argv._[0].replace(/\/$/, "")
 
@@ -93,6 +91,15 @@ const TORRENT_DIR = argv["torrent-dir"]
 // Using flac2mp3 because it's great at dealing with tagging. However, it could
 // just write the tags with lame and drop the perl dependency.
 const FLAC2MP3_PATH = `${__dirname}/flac2mp3/flac2mp3.pl`
+
+const formatPermalink = (torrent) =>
+  `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
+
+const encExists = (enc, editionGroup) =>
+  editionGroup.some((torrent) => torrent.encoding === enc)
+const ENC_FLAC16 = "Lossless"
+const ENC_CBR320 = "320"
+const ENC_VBRV0 = "V0 (VBR)"
 
 function getTorrentQuery() {
   if (argv["info-hash"]) {
@@ -129,27 +136,22 @@ function ensureDir(dir) {
   }
 }
 
-function execFile(cmd, args, mute) {
+function execFile(cmd, args) {
   return new Promise((resolve, reject) => {
     verboseLog(`execFile: ${cmd} ${args.join(" ")}`)
     const childProc = _execFile(cmd, args)
-    const prefix = `>> [${childProc.pid}] `
-    const prefixErr = `!! [${childProc.pid}] `
     let stdout = ""
     let stderr = ""
     childProc.stdout.on("data", (d) => {
       stdout += d
-      if (mute) return
-      process.stdout.write(prefix + d)
+      verboseLog(`[${childProc.pid}] ${d}`)
     })
     childProc.stderr.on("data", (d) => {
       stderr += d
-      if (!VERBOSE) return
-      process.stderr.write(prefixErr + d)
+      verboseLog(`[${childProc.pid}] ${d}`)
     })
     childProc.on("exit", (code) => {
       if (code !== 0) {
-        console.error(`cmd failed: ${cmd} ${args.join(" ")}`)
         reject({ stdout, stderr })
       } else {
         resolve({ stdout, stderr })
@@ -198,47 +200,39 @@ async function copyOtherFiles(outDir, inDir) {
 async function makeFlacTranscode(outDir, inDir, files) {
   await mkdirpMaybe(outDir)
   for (const file of files) {
-    await mkdirpMaybe(path.dirname(file.path))
+    await mkdirpMaybe(path.join(outDir, path.dirname(file.path)))
     const src = path.join(inDir, file.path)
     const dst = path.join(outDir, file.path)
-    console.log(`[-] Transcoding ${file.path}...`)
+    console.log(`[-] Transcoding ${dst}...`)
 
     const sampleRate = file.sampleRate % 48000 === 0 ? 48000 : 44100
 
-    await execFile(
-      "sox",
-      [
-        "--multi-threaded",
-        "--buffer=131072",
-        "-G",
-        src,
-        "-b16",
-        dst,
-        "rate",
-        "-v",
-        "-L",
-        `${sampleRate}`,
-        "dither",
-      ],
-      !VERBOSE,
-    )
+    await execFile("sox", [
+      "--multi-threaded",
+      "--buffer=131072",
+      "-G",
+      src,
+      "-b16",
+      dst,
+      "rate",
+      "-v",
+      "-L",
+      `${sampleRate}`,
+      "dither",
+    ])
   }
 }
 
 async function probeMediaFile(path) {
-  const { stdout } = await execFile(
-    "ffprobe",
-    [
-      "-v",
-      "quiet",
-      "-show_streams",
-      "-show_format",
-      "-print_format",
-      "json",
-      path,
-    ],
-    true,
-  )
+  const { stdout } = await execFile("ffprobe", [
+    "-v",
+    "quiet",
+    "-show_streams",
+    "-show_format",
+    "-print_format",
+    "json",
+    path,
+  ])
   return JSON.parse(stdout)
 }
 
@@ -333,9 +327,6 @@ async function analyzeFileList(inDir, fileList) {
   return results
 }
 
-const formatPermalink = (torrent) =>
-  `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
-
 function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
   if (argv["flac"] === false) {
     return false
@@ -345,12 +336,19 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
     return false
   }
 
-  if (editionGroup.some((torrent) => torrent.encoding === "Lossless")) {
-    // a flac16 already exists.
+  const non24Bit = analyzedFiles.filter(({ bitRate }) => bitRate !== 24)
+  if (non24Bit.length !== 0) {
+    console.log("[-] These are not 24bit FLACs (maybe report)")
+    non24Bit.forEach((b) => console.log(`   ${b.path}: ${b.bitRate}`))
     return false
   }
 
-  return analyzedFiles.every(({ bitRate }) => bitRate === 24)
+  if (ALWAYS_TRANSCODE) {
+    return true
+  }
+
+  // a flac16 already exists.
+  return !encExists(ENC_FLAC16, editionGroup)
 }
 
 async function main(inDir) {
@@ -391,9 +389,11 @@ async function main(inDir) {
   if (shouldMakeFLAC(torrent, editionGroup, analyzedFiles)) {
     const outDir = path.join(
       TRANSCODE_DIR,
-      formatDirname(group, torrent, "FLAC"),
+      formatDirname(group, torrent, "FLAC16"),
     )
     transcodeTasks.push({
+      skipUpload:
+        argv["upload"] === false || encExists(ENC_FLAC16, editionGroup),
       outDir,
       doTranscode: () => makeFlacTranscode(outDir, inDir, analyzedFiles),
       message: formatMessage(
@@ -408,22 +408,23 @@ async function main(inDir) {
   for (const [skip, encoding, args, dirname] of [
     [
       argv["v0"] === false,
-      "V0 (VBR)",
+      ENC_VBRV0,
       "-V 0 -h -S",
       formatDirname(group, torrent, "V0"),
     ],
     [
       argv["320"] === false,
-      "320",
+      ENC_CBR320,
       "-b 320 -h -S",
       formatDirname(group, torrent, "320"),
     ],
   ]) {
+    const exists = encExists(encoding, editionGroup)
     if (skip) {
-      verboseLog(`Won't transcode ${encoding}`)
+      verboseLog(`Won't create ${dirname}`)
       continue
     }
-    if (editionGroup.some((torrent) => torrent.encoding === encoding)) {
+    if (!ALWAYS_TRANSCODE && exists) {
       verboseLog(`${encoding} already exists. Skip`)
       // this encoding already available. no need to transcode
       continue
@@ -431,18 +432,15 @@ async function main(inDir) {
     const outDir = path.join(TRANSCODE_DIR, dirname)
     transcodeTasks.push({
       outDir,
+      skipUpload: argv["upload"] === false || exists,
       doTranscode: () =>
-        execFile(
-          FLAC2MP3_PATH,
-          [
-            "--quiet",
-            `--lameargs=${args}`,
-            `--processes=${os.cpus().length}`,
-            inDir,
-            outDir,
-          ],
-          !VERBOSE,
-        ),
+        execFile(FLAC2MP3_PATH, [
+          "--quiet",
+          `--lameargs=${args}`,
+          `--processes=${os.cpus().length}`,
+          inDir,
+          outDir,
+        ]),
       message: formatMessage(torrent, `flac2mp3 --lameargs="${args}"`),
       format: "MP3",
       bitrate: encoding,
@@ -451,23 +449,25 @@ async function main(inDir) {
 
   const files = []
   for (const t of transcodeTasks) {
-    const { outDir, doTranscode, message, format, bitrate } = t
+    const { outDir, doTranscode, message, format, bitrate, skipUpload } = t
     console.log(`[-] Transcoding ${outDir}`)
     await doTranscode()
     await copyOtherFiles(outDir, inDir)
-    const torrent = await createTorrent(outDir, {
+    const torrentBuffer = await createTorrent(outDir, {
       private: true,
       createdBy: `${pkg.name}@${pkg.version}`,
       announce,
       info: { source: "RED" },
     })
+    if (skipUpload) continue
+
     files.push({
       fileName: `${path.basename(outDir)}.torrent`,
       postData: {
         format,
         bitrate,
         release_desc: message,
-        file_input: torrent,
+        file_input: torrentBuffer,
       },
     })
   }
@@ -506,16 +506,15 @@ async function main(inDir) {
   }
 
   // yargs does magic and inverts --no-upload..
-  if (argv["upload"] === false) {
-    verboseLog("Skip upload...")
-  } else {
-    console.log("[-] Uploading...")
-    await redAPI.upload(uploadOpts)
-  }
-  console.log(`[-] Write torrents to ${TORRENT_DIR}/...`)
+  console.log("[-] Uploading...")
+  await redAPI.upload(uploadOpts)
+
+  files.forEach(({ fileName }) => {
+    console.log(`[-] Write torrents to ${TORRENT_DIR}/${fileName}`)
+  })
   await Promise.all(
     files.map(({ fileName, postData }) =>
-      fs.writeFile(`${TORRENT_DIR}/${fileName}`, postData.file_input),
+      fs.writeFile(path.join(TORRENT_DIR, fileName), postData.file_input),
     ),
   )
   console.log("[*] Done!")

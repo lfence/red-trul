@@ -36,20 +36,20 @@ npm install
 Usage: trul.js [OPTIONS] flac-dir
 
 Options:
-      --version        Show version number                             [boolean]
-  -i, --info-hash      Use the given info hash. Required unless an origin.yaml e
-                       xists in flac-dir.
-      --torrent-id     Use the given torrent id. Alternative to --info-hash.
-      --api-key        API token with 'Torrents' capability. environ-definable a
-                       s RED_API_KEY
-  -o, --torrent-dir    Where to output torrent files              [default: "."]
-  -t, --transcode-dir  Output directory of transcodes
-      --no-flac        Don't transcode into FLAC                       [boolean]
-      --no-v0          Don't transcode into V0                         [boolean]
-      --no-320         Don't transcode into 320                        [boolean]
-      --no-upload      Don't upload anything                           [boolean]
-      --verbose        Print more                                      [boolean]
-  -h, --help           Show help                                       [boolean]
+      --version           Show version number                          [boolean]
+  -i, --info-hash         Torrent hash. Required unless an origin.yaml exists in
+                           flac-dir.
+      --torrent-id        Use the given torrent id. Alternative to --info-hash.
+      --api-key           'Torrents'-capable API token. env-definable as RED_API
+                          _KEY
+  -o, --torrent-dir       Where to output torrent files           [default: "."]
+  -t, --transcode-dir     Output directory of transcodes
+      --no-flac           Don't transcode into FLAC                    [boolean]
+      --no-v0             Don't transcode into V0                      [boolean]
+      --no-320            Don't transcode into 320                     [boolean]
+      --no-upload         Don't upload anything                        [boolean]
+      --always-transcode  Always transcode (tags must be present)      [boolean]
+  -h, --help              Show help                                    [boolean]
 ```
 
 ### Example
