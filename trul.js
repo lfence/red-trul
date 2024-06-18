@@ -1,24 +1,20 @@
 #!/usr/bin/env node
 import REDAPIClient from "./red-api.js"
-import YAML from "yaml"
+import { initConfig } from "./config.js"
 import _createTorrent from "create-torrent"
 import os from "os"
 import path from "path"
 import yargs from "yargs"
-import { execFile as _execFile } from "child_process"
+import { execFile as _execFile, exec as _exec } from "child_process"
 import { hideBin } from "yargs/helpers"
-import { promises as fs, readFileSync, statSync, existsSync } from "fs"
+import { promises as fs, statSync } from "fs"
+import { promisify } from "util"
 import debug from "debug"
 const verboseLog = debug("trul:cli")
+const execFile = promisify(_execFile)
+const createTorrent = promisify(_createTorrent)
 
-const __dirname = path.dirname(process.argv[1])
-const pkg = JSON.parse(readFileSync(path.join(__dirname, "package.json")))
-const createTorrent = (...args) =>
-  new Promise((res, rej) =>
-    _createTorrent(...args, (err, data) => (err ? rej(err) : res(data))),
-  )
-
-const { argv } = yargs(hideBin(process.argv))
+let { argv } = yargs(hideBin(process.argv))
   .usage("Usage: $0 [OPTIONS] flac-dir")
   .option("info-hash", {
     alias: "i",
@@ -68,62 +64,56 @@ if (!argv._[0]) {
   process.exit(1)
 }
 
-const ALWAYS_TRANSCODE = argv["always-transcode"]
-
-const FLAC_DIR = argv._[0].replace(/\/$/, "")
+const {
+  ALWAYS_TRANSCODE,
+  FLAC_DIR,
+  API_KEY,
+  TRANSCODE_DIR,
+  TORRENT_DIR,
+  SOX,
+  SOX_ARGS,
+  FLAC2MP3,
+  FLAC2MP3_ARGS,
+  NO_UPLOAD,
+  NO_FLAC,
+  NO_V0,
+  NO_320,
+  SCRIPT_NAME,
+  TORRENT_QUERY,
+} = initConfig(argv)
 
 // API_KEY requires 'Torrents' permission.
-const API_KEY = argv["api-key"] || process.env.RED_API_KEY
 if (!API_KEY) {
   console.error("Missing required argument '--api-key'. Try '--help' for help")
   process.exit(1)
 }
 
-// Here's the RED API client.
-const redAPI = new REDAPIClient(API_KEY)
+const RED_ENC_FLAC24 = "24bit Lossless"
+const RED_ENC_FLAC16 = "Lossless"
 
-// Transcodes end here. If unset they end up next to the input dir
-const TRANSCODE_DIR = argv["transcode-dir"] || path.dirname(FLAC_DIR)
+const RED_ENC_CBR320 = "320"
+const RED_ENC_VBRV0 = "V0 (VBR)"
 
-// Ready torrents end here (rtorrent watches this dir and auto adds torrents)
-const TORRENT_DIR = argv["torrent-dir"]
+const LAME_ARGS = {
+  [RED_ENC_VBRV0]: "-V0 -h -S",
+  [RED_ENC_CBR320]: "-b 320 -h -S",
+}
 
-// Using flac2mp3 because it's great at dealing with tagging. However, it could
-// just write the tags with lame and drop the perl dependency.
-const FLAC2MP3_PATH = `${__dirname}/flac2mp3/flac2mp3.pl`
+const DIRNAME_FORMAT = {
+  [RED_ENC_FLAC16]: "FLAC16",
+  [RED_ENC_VBRV0]: "V0",
+  [RED_ENC_CBR320]: "320",
+}
+const encExists = (enc, editionGroup) =>
+  editionGroup.some((torrent) => torrent.encoding === enc)
 
 const formatPermalink = (torrent) =>
   `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
 
-const encExists = (enc, editionGroup) =>
-  editionGroup.some((torrent) => torrent.encoding === enc)
-const ENC_FLAC16 = "Lossless"
-const ENC_CBR320 = "320"
-const ENC_VBRV0 = "V0 (VBR)"
-
-function getTorrentQuery() {
-  if (argv["info-hash"]) {
-    return { hash: argv["info-hash"] }
-  }
-
-  if (argv["torrent-id"]) {
-    return { id: argv["torrent-id"] }
-  }
-
-  // if the folder has an origin.yaml file by gazelle-origin, we
-  // can use that instead.
-  if (existsSync(`${FLAC_DIR}/origin.yaml`)) {
-    const originYaml = readFileSync(`${FLAC_DIR}/origin.yaml`)
-    if (originYaml) {
-      const parsed = YAML.parse(originYaml.toString("utf-8"))
-      if (parsed["Format"] !== "FLAC") {
-        throw new Error("[!] Not a FLAC, not interested.")
-      }
-      return { hash: parsed["Info hash"] }
-    }
-  }
-
-  throw new Error("[!] Unable to find an info hash or id.")
+function formatMessage(torrent, command) {
+  return `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
+[b][code]transcode command:[/code][/b] [code]${command}[/code]
+[b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${SCRIPT_NAME}[/code][/url]`
 }
 
 function ensureDir(dir) {
@@ -134,30 +124,6 @@ function ensureDir(dir) {
   if (!stats.isDirectory()) {
     throw new Error(`[!] ${dir} is not a directory.`)
   }
-}
-
-function execFile(cmd, args) {
-  return new Promise((resolve, reject) => {
-    verboseLog(`execFile: ${cmd} ${args.join(" ")}`)
-    const childProc = _execFile(cmd, args)
-    let stdout = ""
-    let stderr = ""
-    childProc.stdout.on("data", (d) => {
-      stdout += d
-      verboseLog(`[${childProc.pid}] ${d}`)
-    })
-    childProc.stderr.on("data", (d) => {
-      stderr += d
-      verboseLog(`[${childProc.pid}] ${d}`)
-    })
-    childProc.on("exit", (code) => {
-      if (code !== 0) {
-        reject({ stdout, stderr })
-      } else {
-        resolve({ stdout, stderr })
-      }
-    })
-  })
 }
 
 const mkdirpMaybe = (() => {
@@ -201,24 +167,17 @@ async function makeFlacTranscode(outDir, inDir, files) {
   await mkdirpMaybe(outDir)
   for (const file of files) {
     await mkdirpMaybe(path.join(outDir, path.dirname(file.path)))
-    const src = path.join(inDir, file.path)
     const dst = path.join(outDir, file.path)
     console.log(`[-] Transcoding ${dst}...`)
-
-    const sampleRate = file.sampleRate % 48000 === 0 ? 48000 : 44100
-
-    await execFile("sox", [
+    await execFile(SOX, [
       "--multi-threaded",
       "--buffer=131072",
-      "-G",
-      src,
-      "-b16",
-      dst,
-      "rate",
-      "-v",
-      "-L",
-      `${sampleRate}`,
-      "dither",
+      ...SOX_ARGS.split(" ").map((arg) =>
+        arg
+          .replace("<in.flac>", path.join(inDir, file.path))
+          .replace("<out.flac>", dst)
+          .replace("<rate>", file.sampleRate % 48000 === 0 ? 48000 : 44100),
+      ),
     ])
   }
 }
@@ -260,16 +219,8 @@ function formatArtist(group) {
   else return "Various Artists"
 }
 
-const sanitizeFilename = (filename) =>
-  filename
-    .replace(/\//g, "∕") // Note that is not a normal / but a utf-8 one
-    .replace(/^~/, "")
-    .replace(/\.$/g, "_")
-    .replace(/[\x01-\x1f]/g, "_")
-    .replace(/[<>:"?*|]/g, "_")
-    .trim()
-
-function formatDirname(group, torrent, format) {
+function formatDirname(group, torrent, bitrate) {
+  const format = DIRNAME_FORMAT[bitrate]
   // will make dirs for FLAC, V0 and 320 transcodes using this as base
   let dirname = `${formatArtist(group)} - ${group.name}`
   if (torrent.remasterTitle) {
@@ -282,13 +233,13 @@ function formatDirname(group, torrent, format) {
     dirname += ` (${year})`
   }
 
-  return sanitizeFilename(`${dirname} [${torrent.media} ${format}]`)
-}
-
-function formatMessage(torrent, command) {
-  return `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
-[b][code]transcode command:[/code][/b] [code]${command}[/code]
-[b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${pkg.name}@${pkg.version}[/code][/url]`
+  return `${dirname} [${torrent.media} ${format}]`
+    .replace(/\//g, "∕") // Note that is not a normal / but a utf-8 one
+    .replace(/^~/, "")
+    .replace(/\.$/g, "_")
+    .replace(/[\x01-\x1f]/g, "_")
+    .replace(/[<>:"?*|]/g, "_")
+    .trim()
 }
 
 async function analyzeFileList(inDir, fileList) {
@@ -328,10 +279,10 @@ async function analyzeFileList(inDir, fileList) {
 }
 
 function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
-  if (argv["flac"] === false) {
+  if (NO_FLAC) {
     return false
   }
-  if (torrent.encoding !== "24bit Lossless") {
+  if (torrent.encoding !== RED_ENC_FLAC24) {
     // we only make flac16 out of flac24
     return false
   }
@@ -348,21 +299,21 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
   }
 
   // a flac16 already exists.
-  return !encExists(ENC_FLAC16, editionGroup)
+  return !encExists(RED_ENC_FLAC16, editionGroup)
 }
 
 async function main(inDir) {
-  statSync(FLAC2MP3_PATH)
+  statSync(FLAC2MP3)
   ensureDir(TRANSCODE_DIR)
   ensureDir(TORRENT_DIR)
+  const redAPI = new REDAPIClient(API_KEY)
 
   const { passkey } = await redAPI.index()
   const announce = `https://flacsfor.me/${passkey}/announce`
-  const torrentQuery = getTorrentQuery()
 
   console.log(`[-] Fetch torrent...`)
   // get the current torrent
-  const { group, torrent } = await redAPI.torrent(torrentQuery)
+  const { group, torrent } = await redAPI.torrent(TORRENT_QUERY)
 
   console.log(`[-] Analyze torrent.fileList...`)
   const analyzedFiles = await analyzeFileList(inDir, torrent.fileList)
@@ -389,61 +340,48 @@ async function main(inDir) {
   if (shouldMakeFLAC(torrent, editionGroup, analyzedFiles)) {
     const outDir = path.join(
       TRANSCODE_DIR,
-      formatDirname(group, torrent, "FLAC16"),
+      formatDirname(group, torrent, RED_ENC_FLAC16),
     )
+
     transcodeTasks.push({
-      skipUpload:
-        argv["upload"] === false || encExists(ENC_FLAC16, editionGroup),
+      skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
       outDir,
       doTranscode: () => makeFlacTranscode(outDir, inDir, analyzedFiles),
-      message: formatMessage(
-        torrent,
-        `sox -G <in.flac> -b16 <out.flac> rate -v -L <rate> dither`,
-      ),
+      message: formatMessage(torrent, `sox ${SOX_ARGS}`),
       format: "FLAC",
-      bitrate: "Lossless",
+      bitrate: RED_ENC_FLAC16,
     })
   }
-
-  for (const [skip, encoding, args, dirname] of [
-    [
-      argv["v0"] === false,
-      ENC_VBRV0,
-      "-V 0 -h -S",
-      formatDirname(group, torrent, "V0"),
-    ],
-    [
-      argv["320"] === false,
-      ENC_CBR320,
-      "-b 320 -h -S",
-      formatDirname(group, torrent, "320"),
-    ],
-  ]) {
-    const exists = encExists(encoding, editionGroup)
+  for (const bitrate of [RED_ENC_VBRV0, RED_ENC_CBR320]) {
+    const skip =
+      (bitrate == RED_ENC_CBR320 && NO_320) ||
+      (bitrate == RED_ENC_VBRV0 && NO_V0)
+    const dirname = formatDirname(group, torrent, bitrate)
+    const exists = encExists(bitrate, editionGroup)
     if (skip) {
       verboseLog(`Won't create ${dirname}`)
       continue
     }
     if (!ALWAYS_TRANSCODE && exists) {
-      verboseLog(`${encoding} already exists. Skip`)
+      verboseLog(`${bitrate} already exists. Skip`)
       // this encoding already available. no need to transcode
       continue
     }
     const outDir = path.join(TRANSCODE_DIR, dirname)
+
+    const args = FLAC2MP3_ARGS.split(" ").map((arg) =>
+      arg
+        .replace("<args>", `'${LAME_ARGS[bitrate]}'`)
+        .replace("<nproc>", os.cpus().length),
+    )
+
     transcodeTasks.push({
       outDir,
-      skipUpload: argv["upload"] === false || exists,
-      doTranscode: () =>
-        execFile(FLAC2MP3_PATH, [
-          "--quiet",
-          `--lameargs=${args}`,
-          `--processes=${os.cpus().length}`,
-          inDir,
-          outDir,
-        ]),
-      message: formatMessage(torrent, `flac2mp3 --lameargs="${args}"`),
+      skipUpload: NO_UPLOAD || exists,
+      doTranscode: () => execFile(FLAC2MP3, [...args, inDir, outDir]),
+      message: formatMessage(torrent, `flac2mp3 ${args.join(" ")}`),
       format: "MP3",
-      bitrate: encoding,
+      bitrate,
     })
   }
 
@@ -455,7 +393,7 @@ async function main(inDir) {
     await copyOtherFiles(outDir, inDir)
     const torrentBuffer = await createTorrent(outDir, {
       private: true,
-      createdBy: `${pkg.name}@${pkg.version}`,
+      createdBy: SCRIPT_NAME,
       announce,
       info: { source: "RED" },
     })
@@ -522,7 +460,7 @@ async function main(inDir) {
 
 ;(async () => {
   await main(FLAC_DIR).catch((...err) => {
-    console.error(`${pkg.name}@${pkg.version} failed`)
+    console.error(`${SCRIPT_NAME} failed`)
     console.error(...err)
   })
 })()
