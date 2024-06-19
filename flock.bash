@@ -1,6 +1,7 @@
 #!/bin/bash
 # This is a wrapper script that will queue up pending runs so that ongoing ones
 # must finish before continuing.
+set -e
 
 LOCKFILE="/tmp/`basename $0`.lock"
 TIMEOUT=3600

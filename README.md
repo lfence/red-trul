@@ -91,5 +91,6 @@ available for [qbittorrent](./qbittorrent-postdl.sh) and
 the torrent client, also configure it to use the torrent-dir of trul as watch
 dir for new torrents, and download those to the transcode dir to start seeding.
 
-Use `red-trul-flock` to avoid running multiple instances of red-trul. Waits
-until the current invocation finishes before starting, like a queue.
+On Linux, use `red-trul-flock` to avoid running multiple instances of red-trul.
+This waits until the current invocation finishes before starting, like a queue.
+TODO for macos
