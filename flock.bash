@@ -2,7 +2,7 @@
 # This is a wrapper script that will queue up pending runs so that ongoing ones
 # must finish before continuing.
 
-LOCKFILE="`basename $0`.lock"
+LOCKFILE="/tmp/`basename $0`.lock"
 TIMEOUT=3600
 touch $LOCKFILE
 

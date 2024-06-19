@@ -1,6 +1,7 @@
 {
   "bin": {
-    "red-trul": "./trul.js"
+    "red-trul": "./trul.js",
+    "red-trul-flock": "./flock.bash"
   },
   "engines": {
     "node": ">=16.0.0"

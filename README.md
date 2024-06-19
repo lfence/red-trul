@@ -15,25 +15,21 @@ at RED. No further authorization is needed.
 ## Install
 
 You need:
-- `nodejs`
+- `nodejs` version 16 or later.
 - `flac`
 - `lame`
 - `sox`
 - `ffmpeg`
-- `git`
 - `perl`
 
 ```bash
-git clone https://github.com/lfence/red-trul && cd ./red-trul
-# clones flac2mp3 sub repo
-git submodule update --init --recursive .
-npm install
+npm install red-trul
 ```
 
 ## Use
 
 ```
-Usage: trul.js [OPTIONS] flac-dir
+Usage: red-trul [OPTIONS] flac-dir
 
 Options:
       --version           Show version number                          [boolean]
@@ -58,7 +54,7 @@ Options:
 # RED_API_KEY is set in env.
 # --announce=https://.../announce is optional is the 'User' capability is given.
 
-./trul.js --info-hash=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+red-trul --info-hash=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
     --torrent-dir=/home/lfen/rtorrent/watch \
     '/home/lfen/Music/TNO Project - There Is No Obsession EP (Flac24)'
 # [-] using announce: https://flacsfor.me/<redacted>/announce
@@ -95,6 +91,5 @@ available for [qbittorrent](./qbittorrent-postdl.sh) and
 the torrent client, also configure it to use the torrent-dir of trul as watch
 dir for new torrents, and download those to the transcode dir to start seeding.
 
-
-Use `flock.bash` to avoid running multiple instances of red-trul, but queue up
-jobs instead.
+Use `red-trul-flock` to avoid running multiple instances of red-trul. Waits
+until the current invocation finishes before starting, like a queue.
