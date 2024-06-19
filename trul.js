@@ -5,7 +5,7 @@ import _createTorrent from "create-torrent"
 import os from "os"
 import path from "path"
 import yargs from "yargs"
-import { execFile as _execFile, exec as _exec } from "child_process"
+import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
 import { promises as fs, statSync } from "fs"
 import { promisify } from "util"
@@ -54,7 +54,7 @@ let { argv } = yargs(hideBin(process.argv))
   })
   .option("always-transcode", {
     boolean: true,
-    describe: "Always transcode (tags must be present)",
+    describe: "Always transcode (if tagged correctly)",
   })
   .help("h")
   .alias("h", "help")
