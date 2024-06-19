@@ -1,9 +1,9 @@
 import YAML from "yaml"
 import path from "path"
-import { readFileSync, existsSync } from "fs"
-
-const __dirname = path.dirname(process.argv[1])
+import { readFileSync, existsSync, realpathSync } from "fs"
+const __dirname = path.dirname(realpathSync(process.argv[1]))
 const pkg = JSON.parse(readFileSync(`${__dirname}/package.json`))
+
 export const initConfig = (argv) => {
   const FLAC_DIR = argv._[0].replace(/\/$/, "")
   return {
@@ -18,7 +18,8 @@ export const initConfig = (argv) => {
     SOX: getEnv("SOX_PATH") || "sox",
     SOX_ARGS: "-G <in.flac> -b16 <out.flac> rate -v -L <rate> dither",
     // flac2mp3 for idv3 and to copy cover art over. The rest is LAME.
-    FLAC2MP3: getEnv("FLAC2MP3_PATH") || `${__dirname}/flac2mp3/flac2mp3.pl`,
+    FLAC2MP3:
+      getEnv("FLAC2MP3_PATH") || `${__dirname}/flac2mp3-no-unsync/flac2mp3.pl`,
     FLAC2MP3_ARGS: "--lameargs=<args> --processes=<nproc>",
     NO_UPLOAD: argv["upload"] === false,
     NO_V0: argv["v0"] === false,
