@@ -6,8 +6,7 @@
     "node": ">=16.0.0"
   },
   "scripts": {
-    "preinstall": "which curl && which tar",
-    "postinstall": "curl -L https://github.com/lfence/flac2mp3/archive/refs/tags/no-unsync.tar.gz | tar xzvf -"
+    "postinstall": "./postinstall.sh"
   },
   "name": "red-trul",
   "version": "2.2.4",
