@@ -7,7 +7,7 @@
     "node": ">=16.0.0"
   },
   "name": "red-trul",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "",
   "main": "trul.js",
   "author": "",
