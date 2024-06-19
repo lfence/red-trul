@@ -23,7 +23,7 @@ You need:
 - `perl`
 
 ```bash
-npm install red-trul
+npm install -g red-trul
 ```
 
 ## Use
