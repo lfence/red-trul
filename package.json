@@ -1,9 +1,18 @@
 {
+  "bin": {
+    "red-trul": "./trul.js"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "scripts": {
+    "preinstall": "which curl && which tar",
+    "postinstall": "curl -L https://github.com/lfence/flac2mp3/archive/refs/tags/no-unsync.tar.gz | tar xzvf -"
+  },
   "name": "red-trul",
   "version": "2.2.4",
   "description": "",
   "main": "trul.js",
-  "scripts": {},
   "author": "",
   "type": "module",
   "license": "ISC",
@@ -11,6 +20,7 @@
     "axios": "^1.6.5",
     "bencode": "^4.0.0",
     "create-torrent": "^5.0.1",
+    "debug": "^4.3.5",
     "form-data": "^4.0.0",
     "he": "^1.2.0",
     "yaml": "^1.10.0",

@@ -3,9 +3,11 @@ import q from "querystring"
 import FormData from "form-data"
 import he from "he"
 import path from "path"
-import { readFileSync } from "fs"
+import { readFileSync, realpathSync } from "fs"
 const pkg = JSON.parse(
-  readFileSync(path.join(path.dirname(process.argv[1]), "package.json")),
+  readFileSync(
+    path.join(path.dirname(realpathSync(process.argv[1])), "package.json"),
+  ),
 )
 
 /* Recurses over an entire (acyclic) object. Mutates object entries in-place.
