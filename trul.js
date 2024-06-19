@@ -391,12 +391,14 @@ async function main(inDir) {
     console.log(`[-] Transcoding ${outDir}`)
     await doTranscode()
     await copyOtherFiles(outDir, inDir)
-    const torrentBuffer = await createTorrent(outDir, {
-      private: true,
-      createdBy: SCRIPT_NAME,
-      announce,
-      info: { source: "RED" },
-    })
+    const torrentBuffer = Buffer.from(
+      await createTorrent(outDir, {
+        private: true,
+        createdBy: SCRIPT_NAME,
+        announce,
+        info: { source: "RED" },
+      }),
+    )
     if (skipUpload) continue
 
     files.push({
