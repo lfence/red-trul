@@ -7,7 +7,7 @@ import path from "path"
 import yargs from "yargs"
 import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
-import { promises as fs, statSync } from "fs"
+import { promises as fs } from "fs"
 import { promisify } from "util"
 import debug from "debug"
 const verboseLog = debug("trul:cli")
@@ -110,19 +110,20 @@ const encExists = (enc, editionGroup) =>
 const formatPermalink = (torrent) =>
   `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
 
-function formatMessage(torrent, command) {
-  return `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
+const formatMessage = (torrent, command) =>
+  `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
 [b][code]transcode command:[/code][/b] [code]${command}[/code]
 [b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${SCRIPT_NAME}[/code][/url]`
-}
 
-function ensureDir(dir) {
-  const stats = statSync(dir)
-  if (!stats) {
-    throw new Error(`[!] ${dir} does not exist!`)
+async function ensureDir(dir) {
+  try {
+    await fs.access(dir)
+  } catch (e) {
+    throw new Error(`[!] Path "${dir}" does not exist!`)
   }
+  const stats = await fs.stat(dir)
   if (!stats.isDirectory()) {
-    throw new Error(`[!] ${dir} is not a directory.`)
+    throw new Error(`[!] "${dir}" is not a directory.`)
   }
 }
 
@@ -182,7 +183,7 @@ async function makeFlacTranscode(outDir, inDir, files) {
   }
 }
 
-async function probeMediaFile(path) {
+async function probeMediaFile(filename) {
   const { stdout } = await execFile("ffprobe", [
     "-v",
     "quiet",
@@ -190,7 +191,7 @@ async function probeMediaFile(path) {
     "-show_format",
     "-print_format",
     "json",
-    path,
+    filename,
   ])
   return JSON.parse(stdout)
 }
@@ -302,10 +303,12 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
   return !encExists(RED_ENC_FLAC16, editionGroup)
 }
 
-async function main(inDir) {
-  statSync(FLAC2MP3)
-  ensureDir(TRANSCODE_DIR)
-  ensureDir(TORRENT_DIR)
+async function main() {
+  await fs.access(FLAC2MP3)
+  await ensureDir(TRANSCODE_DIR)
+  await ensureDir(TORRENT_DIR)
+  await ensureDir(FLAC_DIR)
+
   const redAPI = new REDAPIClient(API_KEY)
 
   const { passkey } = await redAPI.index()
@@ -316,7 +319,7 @@ async function main(inDir) {
   const { group, torrent } = await redAPI.torrent(TORRENT_QUERY)
 
   console.log(`[-] Analyze torrent.fileList...`)
-  const analyzedFiles = await analyzeFileList(inDir, torrent.fileList)
+  const analyzedFiles = await analyzeFileList(FLAC_DIR, torrent.fileList)
   // if that didn't throw, tags should be OK.
   console.log("[*] Required tags are present, would transcode this!")
 
@@ -346,7 +349,7 @@ async function main(inDir) {
     transcodeTasks.push({
       skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
       outDir,
-      doTranscode: () => makeFlacTranscode(outDir, inDir, analyzedFiles),
+      doTranscode: () => makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles),
       message: formatMessage(torrent, `sox ${SOX_ARGS}`),
       format: "FLAC",
       bitrate: RED_ENC_FLAC16,
@@ -378,7 +381,7 @@ async function main(inDir) {
     transcodeTasks.push({
       outDir,
       skipUpload: NO_UPLOAD || exists,
-      doTranscode: () => execFile(FLAC2MP3, [...args, inDir, outDir]),
+      doTranscode: () => execFile(FLAC2MP3, [...args, FLAC_DIR, outDir]),
       message: formatMessage(torrent, `flac2mp3 ${args.join(" ")}`),
       format: "MP3",
       bitrate,
@@ -390,7 +393,7 @@ async function main(inDir) {
     const { outDir, doTranscode, message, format, bitrate, skipUpload } = t
     console.log(`[-] Transcoding ${outDir}`)
     await doTranscode()
-    await copyOtherFiles(outDir, inDir)
+    await copyOtherFiles(outDir, FLAC_DIR)
     const torrentBuffer = Buffer.from(
       await createTorrent(outDir, {
         private: true,
@@ -461,8 +464,9 @@ async function main(inDir) {
 }
 
 ;(async () => {
-  await main(FLAC_DIR).catch((...err) => {
+  await main().catch((err) => {
     console.error(`${SCRIPT_NAME} failed`)
-    console.error(...err)
+    console.error(err.message)
+    verboseLog(err)
   })
 })()
