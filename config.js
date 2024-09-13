@@ -12,7 +12,7 @@ export const initConfig = (argv) => {
     // input dir
     FLAC_DIR,
     // transcode output
-    TRANSCODE_DIR: argv["transcode-dir"] || path.dirname(config.FLAC_DIR),
+    TRANSCODE_DIR: argv["transcode-dir"] || path.dirname(FLAC_DIR),
     // torrent output
     TORRENT_DIR: argv["torrent-dir"],
     SOX: getEnv("SOX_PATH") || "sox",
