@@ -44,7 +44,7 @@ Options:
       --no-v0             Don't transcode into V0                      [boolean]
       --no-320            Don't transcode into 320                     [boolean]
       --no-upload         Don't upload anything                        [boolean]
-      --always-transcode  Always transcode (tags must be present)      [boolean]
+      --always-transcode  Always transcode (if tagged correctly)       [boolean]
   -h, --help              Show help                                    [boolean]
 ```
 
