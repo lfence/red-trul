@@ -16,8 +16,8 @@
   "dependencies": {
     "axios": "^1.6.5",
     "bencode": "^4.0.0",
-    "create-torrent": "^6.0.17",
-    "debug": "^4.3.5",
+    "create-torrent": "^6.0.18",
+    "debug": "^4.3.7",
     "form-data": "^4.0.0",
     "he": "^1.2.0",
     "yaml": "^1.10.0",
@@ -25,8 +25,5 @@
   },
   "prettier": {
     "semi": false
-  },
-  "devDependencies": {
-    "eslint": "^8.1.0"
   }
 }
