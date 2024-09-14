@@ -184,16 +184,19 @@ async function makeFlacTranscode(outDir, inDir, files) {
 }
 
 async function probeMediaFile(filename) {
-  const { stdout } = await execFile("ffprobe", [
-    "-v",
-    "quiet",
-    "-show_streams",
-    "-show_format",
-    "-print_format",
-    "json",
-    filename,
-  ])
-  return JSON.parse(stdout)
+  try {
+    const { stdout } = await execFile("ffprobe", [
+      "-show_streams",
+      "-show_format",
+      "-print_format",
+      "json",
+      filename,
+    ])
+    return JSON.parse(stdout)
+  } catch (e) {
+    verboseLog(e)
+    throw new Error(`[!] '${e.cmd}' failed (${e.code})`)
+  }
 }
 
 function filterSameEditionGroupAs({
@@ -256,7 +259,7 @@ async function analyzeFileList(inDir, fileList) {
   console.log(`[-] Run ffprobe (${flacs.length} flacs)...`)
   const results = []
   for (const path of flacs) {
-    const absPath = `${inDir}/${path}`
+    const absPath = path.join(inDir, path)
 
     // this was originally in parallel, but for >100 files it became flaky..
     const info = await probeMediaFile(absPath)
@@ -317,15 +320,11 @@ async function main() {
   console.log(`[-] Fetch torrent...`)
   // get the current torrent
   const { group, torrent } = await redAPI.torrent(TORRENT_QUERY)
+  console.log(`[-] Permalink: ${formatPermalink(torrent)}`)
 
   console.log(`[-] Analyze torrent.fileList...`)
   const analyzedFiles = await analyzeFileList(FLAC_DIR, torrent.fileList)
-  // if that didn't throw, tags should be OK.
-  console.log("[*] Required tags are present, would transcode this!")
 
-  console.log(`[-] Permalink: ${formatPermalink(torrent)}`)
-
-  // see what releases already exists for you.
   console.log(`[-] Fetch torrentgroup...`)
   const { torrents } = await redAPI.torrentgroup({ id: group.id })
 
@@ -333,7 +332,9 @@ async function main() {
   const editionGroup = torrents.filter(filterSameEditionGroupAs(torrent))
 
   if (editionGroup.length === 0) {
-    throw Error("[!] Edition group should at least contain the current release")
+    throw new Error(
+      "[!] Edition group should at least contain the current release",
+    )
   }
 
   // torrents will be kept in memory before uploading, after uploading they will
