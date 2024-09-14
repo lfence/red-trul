@@ -258,8 +258,8 @@ async function analyzeFileList(inDir, fileList) {
 
   console.log(`[-] Run ffprobe (${flacs.length} flacs)...`)
   const results = []
-  for (const path of flacs) {
-    const absPath = path.join(inDir, path)
+  for (const flacpath of flacs) {
+    const absPath = path.join(inDir, flacpath)
 
     // this was originally in parallel, but for >100 files it became flaky..
     const info = await probeMediaFile(absPath)
@@ -272,7 +272,7 @@ async function analyzeFileList(inDir, fileList) {
     )
 
     results.push({
-      path, // e.g., CD1/01......flac
+      path: flacpath, // e.g., CD1/01......flac
       tags,
       bitRate: Number.parseInt(flacStream.bits_per_raw_sample, 10),
       sampleRate: Number.parseInt(flacStream.sample_rate, 10),
