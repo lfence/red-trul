@@ -18,12 +18,14 @@ function decodeEntities(obj) {
   }
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "string") {
-      obj[key] = he.decode(value)
+      // on rare occasions we get double-encoded filenames like 
+      // "1 - &#10042;&amp;#120372;&#4117;&amp;#120520;&#10042;.flac"
+      obj[key] = he.decode(he.decode(value))
     } else if (Array.isArray(value)) {
       // If the property is an array, decode each string element
       obj[key] = value.map((item) => {
         if (typeof item === "string") {
-          return he.decode(item)
+          return he.decode(he.decode(item))
         } else if (typeof item === "object") {
           // If the element is an object, recursively decode its strings
           decodeEntities(item)
