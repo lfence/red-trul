@@ -108,7 +108,7 @@ const encExists = (enc, editionGroup) =>
   editionGroup.some((torrent) => torrent.encoding === enc)
 
 const formatPermalink = (torrent) =>
-  `https://redacted.ch/torrents.php?torrentid=${torrent.id}`
+  `https://redacted.sh/torrents.php?torrentid=${torrent.id}`
 
 const formatMessage = (torrent, command) =>
   `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]

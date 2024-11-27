@@ -47,7 +47,7 @@ export default class REDAPIClient {
     }
 
     this.apiClient = axios.create({
-      baseURL: process.env.RED_API || "https://redacted.ch",
+      baseURL: process.env.RED_API || "https://redacted.sh",
       headers: {
         Authorization: API_KEY,
         "user-agent": `${pkg.name}@${pkg.version}`,
