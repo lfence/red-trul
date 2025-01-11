@@ -5,14 +5,14 @@ const __dirname = path.dirname(realpathSync(process.argv[1]))
 const pkg = JSON.parse(readFileSync(`${__dirname}/package.json`))
 
 export const initConfig = (argv) => {
-  const FLAC_DIR = argv._[0].replace(/\/$/, "")
+  const FLAC_DIR = argv._[0]?.replace(/\/$/, "")
   return {
     ALWAYS_TRANSCODE: argv["always-transcode"],
     API_KEY: argv["api-key"] || getEnv("RED_API_KEY"),
     // input dir
     FLAC_DIR,
     // transcode output
-    TRANSCODE_DIR: argv["transcode-dir"] || path.dirname(FLAC_DIR),
+    TRANSCODE_DIR: argv["transcode-dir"] || path.dirname(FLAC_DIR ?? ""),
     // torrent output
     TORRENT_DIR: argv["torrent-dir"],
     SOX: getEnv("SOX_PATH") || "sox",
@@ -55,5 +55,8 @@ function getTorrentQuery(FLAC_DIR, argv) {
     }
   }
 
-  throw new Error("[!] Unable to find an info hash or id.")
+  throw new Error(
+    "[!] Unable to find an info hash or id. " +
+      "Did you forget to pass --info-hash or --id?",
+  )
 }

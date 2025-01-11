@@ -5,13 +5,34 @@ import _createTorrent from "create-torrent"
 import os from "os"
 import path from "path"
 import yargs from "yargs"
-import { execFile as _execFile } from "child_process"
+import { execFile as _execFile, exec as _exec } from "child_process"
 import { hideBin } from "yargs/helpers"
 import { promises as fs } from "fs"
 import { promisify } from "util"
 import debug from "debug"
 const verboseLog = debug("trul:cli")
-const execFile = promisify(_execFile)
+
+async function execFile(file, args, ops = {}) {
+  verboseLog(`exec: ${file} ${args.join(" ")}`)
+  const subprocess = _execFile(file, args, ops)
+  const out = { stderr: "", stdout: "" }
+
+  subprocess.stderr.on("data", (d) => {
+    verboseLog(`${path.basename(file)} [${subprocess.pid}]: ${d}`)
+    out.stderr += d
+  })
+  subprocess.stdout.on("data", (d) => {
+    verboseLog(`${path.basename(file)} [${subprocess.pid}]: ${d}`)
+    out.stdout += d
+  })
+  await new Promise((res) => {
+    subprocess.stdout.on("end", () => {
+      res()
+    })
+  })
+  return out
+}
+
 const createTorrent = promisify(_createTorrent)
 
 let { argv } = yargs(hideBin(process.argv))
@@ -55,15 +76,12 @@ let { argv } = yargs(hideBin(process.argv))
   .option("always-transcode", {
     boolean: true,
     describe: "Always transcode (if tagged correctly)",
+    default: false,
   })
   .help("h")
   .alias("h", "help")
 
-if (!argv._[0]) {
-  console.error(`No input, nothing to do. Try '--help'`)
-  process.exit(1)
-}
-
+const CONFIG = initConfig(argv)
 const {
   ALWAYS_TRANSCODE,
   FLAC_DIR,
@@ -80,7 +98,14 @@ const {
   NO_320,
   SCRIPT_NAME,
   TORRENT_QUERY,
-} = initConfig(argv)
+} = CONFIG
+verboseLog(`${SCRIPT_NAME}! Config:`)
+verboseLog(CONFIG)
+
+if (!argv._[0]) {
+  console.error(`No input, nothing to do. Try '--help'`)
+  process.exit(1)
+}
 
 // API_KEY requires 'Torrents' permission.
 if (!API_KEY) {
