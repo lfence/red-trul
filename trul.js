@@ -301,6 +301,7 @@ async function analyzeFileList(inDir, fileList) {
       tags,
       bitRate: Number.parseInt(flacStream.bits_per_raw_sample, 10),
       sampleRate: Number.parseInt(flacStream.sample_rate, 10),
+      channels: flacStream.channels
     })
   }
 
@@ -350,6 +351,9 @@ async function main() {
   console.log(`[-] Analyze torrent.fileList...`)
   const analyzedFiles = await analyzeFileList(FLAC_DIR, torrent.fileList)
 
+  // mp3 must not be used for anything except mono and stereo, consider AAC...
+  const mp3incompatible = analyzedFiles.some(flac => flac.channels > 2)
+
   console.log(`[-] Fetch torrentgroup...`)
   const { torrents } = await redAPI.torrentgroup({ id: group.id })
 
@@ -384,7 +388,8 @@ async function main() {
   for (const bitrate of [RED_ENC_VBRV0, RED_ENC_CBR320]) {
     const skip =
       (bitrate == RED_ENC_CBR320 && NO_320) ||
-      (bitrate == RED_ENC_VBRV0 && NO_V0)
+      (bitrate == RED_ENC_VBRV0 && NO_V0) ||
+      mp3incompatible
     const dirname = formatDirname(group, torrent, bitrate)
     const exists = encExists(bitrate, editionGroup)
     if (skip) {
@@ -442,7 +447,7 @@ async function main() {
   }
 
   if (files.length === 0) {
-    console.log("[-] No files made, nothing to do")
+    console.log("[-] No torrents made, nothing to upload")
     return
   }
 
