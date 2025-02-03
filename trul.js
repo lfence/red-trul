@@ -177,10 +177,12 @@ async function* traverseFiles(baseDir) {
 
 // Copy additional (non-music) files too. Only moving png and jpegs right now,
 // anything else missing?
-async function copyOtherFiles(outDir, inDir) {
+async function copyOtherFiles(outDir, inDir, media) {
   const tasks = []
+  const needsLineage = !["CD", "WEB"].includes(media)
+  const includeFilePtrn = needsLineage ? /\.(txt|png|jpe?g)$/ : /\.(png|jpe?g)$/
   for await (let { file, dir } of traverseFiles(inDir)) {
-    if (!/\.(png|jpe?g)$/.test(file)) continue
+    if (!includeFilePtrn.test(file)) continue
     const src = path.join(inDir, dir, file)
     const dst = path.join(outDir, dir, file)
     await mkdirpMaybe(path.join(outDir, dir))
@@ -423,8 +425,9 @@ async function main() {
   for (const t of transcodeTasks) {
     const { outDir, doTranscode, message, format, bitrate, skipUpload } = t
     console.log(`[-] Transcoding ${outDir}`)
+
     await doTranscode()
-    await copyOtherFiles(outDir, FLAC_DIR)
+    await copyOtherFiles(outDir, FLAC_DIR, torrent.media)
     const torrentBuffer = Buffer.from(
       await createTorrent(outDir, {
         private: true,
