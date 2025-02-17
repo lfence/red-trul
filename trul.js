@@ -5,7 +5,7 @@ import _createTorrent from "create-torrent"
 import os from "os"
 import path from "path"
 import yargs from "yargs"
-import { execFile as _execFile, exec as _exec } from "child_process"
+import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
 import { promises as fs } from "fs"
 import { promisify } from "util"
@@ -15,7 +15,7 @@ const verboseLog = debug("trul:cli")
 async function execFile(file, args, ops = {}) {
   verboseLog(`exec: ${file} ${args.join(" ")}`)
   const subprocess = _execFile(file, args, ops)
-  const out = { stderr: "", stdout: "" }
+  const out = { stderr: "", stdout: "", code: NaN }
 
   subprocess.stderr.on("data", (d) => {
     verboseLog(`${path.basename(file)} [${subprocess.pid}]: ${d}`)
@@ -26,7 +26,12 @@ async function execFile(file, args, ops = {}) {
     out.stdout += d
   })
   await new Promise((res) => {
-    subprocess.stdout.on("end", () => {
+    subprocess.on("close", (code) => {
+      out.code = code
+      if (code !== 0) {
+        // will just propagate this up
+        throw new Error("execFile: ", JSON.stringify(out, null, 2))
+      }
       res()
     })
   })
@@ -303,7 +308,7 @@ async function analyzeFileList(inDir, fileList) {
       tags,
       bitRate: Number.parseInt(flacStream.bits_per_raw_sample, 10),
       sampleRate: Number.parseInt(flacStream.sample_rate, 10),
-      channels: flacStream.channels
+      channels: flacStream.channels,
     })
   }
 
@@ -354,7 +359,7 @@ async function main() {
   const analyzedFiles = await analyzeFileList(FLAC_DIR, torrent.fileList)
 
   // mp3 must not be used for anything except mono and stereo, consider AAC...
-  const mp3incompatible = analyzedFiles.some(flac => flac.channels > 2)
+  const mp3incompatible = analyzedFiles.some((flac) => flac.channels > 2)
 
   console.log(`[-] Fetch torrentgroup...`)
   const { torrents } = await redAPI.torrentgroup({ id: group.id })
