@@ -359,6 +359,9 @@ async function main() {
   // get the current torrent
   const { group, torrent } = await redAPI.torrent(TORRENT_QUERY)
   console.log(`[-] Permalink: ${formatPermalink(torrent)}`)
+  if (torrent.format !== "FLAC") {
+    throw new Error("[!] Not a FLAC, not interested.")
+  }
 
   console.log(`[-] Analyze torrent.fileList...`)
   const analyzedFiles = await analyzeFileList(FLAC_DIR, torrent.fileList)
