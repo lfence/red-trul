@@ -190,10 +190,14 @@ async function* traverseFiles(baseDir) {
 // anything else missing?
 async function copyOtherFiles(outDir, inDir, media) {
   const tasks = []
-  const needsLineage = !["CD", "WEB"].includes(media)
-  const includeFilePtrn = needsLineage ? /\.(txt|png|jpe?g)$/ : /\.(png|jpe?g)$/
+  const incFileExts = [".png", ".jpg", ".jpeg", ".pdf"]
+  if (!["CD", "WEB"].includes(media)) {
+    incFileExts.push(".txt") // include lineage.txt
+  }
   for await (let { file, dir } of traverseFiles(inDir)) {
-    if (!includeFilePtrn.test(file)) continue
+    if (!incFileExts.includes(path.extname(file))) {
+      continue
+    }
     const src = path.join(inDir, dir, file)
     const dst = path.join(outDir, dir, file)
     await mkdirpMaybe(path.join(outDir, dir))
