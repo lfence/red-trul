@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import REDAPIClient from "./red-api.js"
-import { initConfig } from "./config.js"
+import { initConfig, getEnv } from "./config.js"
 import _createTorrent from "create-torrent"
 import os from "os"
 import path from "path"
 import yargs from "yargs"
-import { execFile as _execFile, exec as _exec } from "child_process"
+import { execFile as _execFile } from "child_process"
 import { hideBin } from "yargs/helpers"
 import { promises as fs } from "fs"
 import { promisify } from "util"
@@ -13,9 +13,15 @@ import debug from "debug"
 const verboseLog = debug("trul:cli")
 
 async function execFile(file, args, ops = {}) {
-  verboseLog(`exec: ${file} ${args.join(" ")}`)
-  const subprocess = _execFile(file, args, ops)
-  const out = { stderr: "", stdout: "" }
+  verboseLog(`execFile: ${file} ${args.join(" ")}...`)
+  let subprocess = null
+  try {
+    subprocess = _execFile(file, args, ops)
+  } catch (e) {
+    verboseLog(e)
+    throw new Error(`[!] execFile failed: ${e.code}`)
+  }
+  const out = { stderr: "", stdout: "", code: NaN }
 
   subprocess.stderr.on("data", (d) => {
     verboseLog(`${path.basename(file)} [${subprocess.pid}]: ${d}`)
@@ -26,7 +32,12 @@ async function execFile(file, args, ops = {}) {
     out.stdout += d
   })
   await new Promise((res) => {
-    subprocess.stdout.on("end", () => {
+    subprocess.on("close", (code) => {
+      out.code = code
+      if (code !== 0) {
+        verboseLog(out)
+        throw new Error(`[!] execFile failed: ${code}`)
+      }
       res()
     })
   })
@@ -211,19 +222,14 @@ async function makeFlacTranscode(outDir, inDir, files) {
 }
 
 async function probeMediaFile(filename) {
-  try {
-    const { stdout } = await execFile("ffprobe", [
-      "-show_streams",
-      "-show_format",
-      "-print_format",
-      "json",
-      filename,
-    ])
-    return JSON.parse(stdout)
-  } catch (e) {
-    verboseLog(e)
-    throw new Error(`[!] '${e.cmd}' failed (${e.code})`)
-  }
+  const { stdout } = await execFile("ffprobe", [
+    "-show_streams",
+    "-show_format",
+    "-print_format",
+    "json",
+    filename,
+  ])
+  return JSON.parse(stdout)
 }
 
 function filterSameEditionGroupAs({
@@ -303,7 +309,7 @@ async function analyzeFileList(inDir, fileList) {
       tags,
       bitRate: Number.parseInt(flacStream.bits_per_raw_sample, 10),
       sampleRate: Number.parseInt(flacStream.sample_rate, 10),
-      channels: flacStream.channels
+      channels: flacStream.channels,
     })
   }
 
@@ -354,7 +360,7 @@ async function main() {
   const analyzedFiles = await analyzeFileList(FLAC_DIR, torrent.fileList)
 
   // mp3 must not be used for anything except mono and stereo, consider AAC...
-  const mp3incompatible = analyzedFiles.some(flac => flac.channels > 2)
+  const mp3incompatible = analyzedFiles.some((flac) => flac.channels > 2)
 
   console.log(`[-] Fetch torrentgroup...`)
   const { torrents } = await redAPI.torrentgroup({ id: group.id })
@@ -502,5 +508,6 @@ async function main() {
     console.error(`${SCRIPT_NAME} failed`)
     console.error(err.message)
     verboseLog(err)
+    getEnv("DEBUG") || console.error("Use 'DEBUG=trul:cli' for verbose logs")
   })
 })()
