@@ -154,7 +154,7 @@ const formatMessage = (torrent, command) =>
 async function ensureDir(dir) {
   try {
     await fs.access(dir)
-  } catch (e) {
+  } catch {
     throw new Error(`[!] Path "${dir}" does not exist!`)
   }
   const stats = await fs.stat(dir)
@@ -391,14 +391,24 @@ async function main() {
       formatDirname(group, torrent, RED_ENC_FLAC16),
     )
 
-    transcodeTasks.push({
-      skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
-      outDir,
-      doTranscode: () => makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles),
-      message: formatMessage(torrent, `sox ${SOX_ARGS}`),
-      format: "FLAC",
-      bitrate: RED_ENC_FLAC16,
-    })
+    let skip = false
+    try {
+      await fs.mkdir(outDir)
+    } catch {
+      console.log(`[!] ${outDir} already exists! Delete or rename and re-run!`)
+      skip = true
+    }
+
+    if (!skip) {
+      transcodeTasks.push({
+        skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
+        outDir,
+        doTranscode: () => makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles),
+        message: formatMessage(torrent, `sox ${SOX_ARGS}`),
+        format: "FLAC",
+        bitrate: RED_ENC_FLAC16,
+      })
+    }
   }
   for (const bitrate of [RED_ENC_VBRV0, RED_ENC_CBR320]) {
     const skip =
@@ -417,6 +427,12 @@ async function main() {
       continue
     }
     const outDir = path.join(TRANSCODE_DIR, dirname)
+    try {
+      await fs.mkdir(outDir)
+    } catch {
+      console.log(`[!] ${outDir} already exists! delete or rename and re-run!`)
+      continue
+    }
 
     const args = FLAC2MP3_ARGS.split(" ").map((arg) =>
       arg
