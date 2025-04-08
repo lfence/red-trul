@@ -179,7 +179,7 @@ async function* traverseFiles(baseDir) {
     const fpath = path.join(baseDir, dirent.name)
     if (dirent.isDirectory()) {
       for await (const f of traverseFiles(fpath)) {
-        yield { file: f.file, dir: path.join(f.dir, dirent.name) }
+        yield { file: f.file, dir: path.join(dirent.name, f.dir) }
       }
     }
     yield { file: dirent.name, dir: "." }
