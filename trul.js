@@ -283,6 +283,13 @@ function formatDirname(group, torrent, bitrate) {
     .trim()
 }
 
+function findMissingTags(tags) {
+  const keys = Object.keys(tags || {}).map((key) => key.toUpperCase())
+  return ["TITLE", "ARTIST", "ALBUM", "TRACK"].filter(
+    (tag) => !keys.include(tag),
+  )
+}
+
 async function analyzeFileList(inDir, fileList) {
   const flacs = fileList
     .split("|||")
@@ -298,19 +305,21 @@ async function analyzeFileList(inDir, fileList) {
   for (const flacpath of flacs) {
     const absPath = path.join(inDir, flacpath)
 
-    // this was originally in parallel, but for >100 files it became flaky..
     const info = await probeMediaFile(absPath)
-    const tags = Object.keys(info.format.tags || {}).map((key) => key.toUpperCase())
-    if (!["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))) {
-      throw new Error(`[!] Required tags are not present! check ${absPath}`)
+    const missingTags = findMissingTags(info.format.tags)
+    if (missingTags.length > 0) {
+      throw new Error(
+        `[!] ${absPath}: missing required tags: ${missingTags.join()}.`,
+      )
     }
+
     const flacStream = info.streams.find(
       ({ codec_name }) => codec_name === "flac",
     )
 
     results.push({
       path: flacpath, // e.g., CD1/01......flac
-      tags,
+      tags: info.format.tags,
       bitRate: Number.parseInt(flacStream.bits_per_raw_sample, 10),
       sampleRate: Number.parseInt(flacStream.sample_rate, 10),
       channels: flacStream.channels,
