@@ -300,7 +300,7 @@ async function analyzeFileList(inDir, fileList) {
 
     // this was originally in parallel, but for >100 files it became flaky..
     const info = await probeMediaFile(absPath)
-    const tags = Object.keys(info.format.tags).map((key) => key.toUpperCase())
+    const tags = Object.keys(info.format.tags || {}).map((key) => key.toUpperCase())
     if (!["TITLE", "ARTIST", "ALBUM", "TRACK"].every((t) => tags.includes(t))) {
       throw new Error(`[!] Required tags are not present! check ${absPath}`)
     }
