@@ -286,7 +286,7 @@ function formatDirname(group, torrent, bitrate) {
 function findMissingTags(tags) {
   const keys = Object.keys(tags || {}).map((key) => key.toUpperCase())
   return ["TITLE", "ARTIST", "ALBUM", "TRACK"].filter(
-    (tag) => !keys.include(tag),
+    (tag) => !keys.includes(tag),
   )
 }
 
