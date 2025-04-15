@@ -353,6 +353,54 @@ function shouldMakeFLAC(torrent, editionGroup, analyzedFiles) {
   return !encExists(RED_ENC_FLAC16, editionGroup)
 }
 
+async function verifyMp3Tags(outDir) {
+  console.log(`[-] Verifying MP3 tags in ${outDir}...`)
+  let failedFiles = []
+
+  // find mp3 files
+  for await (let { file, dir } of traverseFiles(outDir)) {
+    if (!file.endsWith(".mp3")) continue
+
+    const filePath = path.join(outDir, dir, file)
+    try {
+      // Use ffprobe to check if the file has proper tags
+      const info = await probeMediaFile(filePath)
+
+      // if any tags exist
+      if (!info.format.tags) {
+        console.log(`[!] No tags in ${filePath}`)
+        failedFiles.push(filePath)
+        continue
+      }
+
+      const tagKeys = Object.keys(info.format.tags).map((key) =>
+        key.toUpperCase()
+      )
+
+      const requiredTags = ["TITLE", "ARTIST", "ALBUM", "TRACK"]
+      const missingTags = requiredTags.filter((tag) => !tagKeys.includes(tag))
+
+      if (missingTags.length > 0) {
+        console.log(
+          `[!] Missing tags in ${filePath}: ${missingTags.join(", ")}`
+        )
+        failedFiles.push(filePath)
+      }
+    } catch (err) {
+      console.error(`[!] Error verifying tags for ${filePath}: ${err.message}`)
+      failedFiles.push(filePath)
+    }
+  }
+
+  if (failedFiles.length > 0) {
+    console.log(`[!] Found ${failedFiles.length} files with missing tags`)
+    return false
+  }
+
+  console.log(`[-] All MP3 files have proper tags`)
+  return true
+}
+
 async function main() {
   await fs.access(FLAC2MP3)
   await ensureDir(TRANSCODE_DIR)
@@ -466,6 +514,18 @@ async function main() {
 
     await doTranscode()
     await copyOtherFiles(outDir, FLAC_DIR, torrent.media)
+
+    let tagsValid = true
+    if (format === "MP3") {
+      tagsValid = await verifyMp3Tags(outDir)
+      if (!tagsValid) {
+        console.error(
+          `[!] Tag verification failed for ${outDir}. Skipping upload.`
+        )
+        continue
+      }
+    }
+
     const torrentBuffer = Buffer.from(
       await createTorrent(outDir, {
         private: true,
