@@ -147,9 +147,9 @@ const formatPermalink = (torrent) =>
   `https://redacted.sh/torrents.php?torrentid=${torrent.id}`
 
 const formatMessage = (torrent, command) =>
-  `[b][code]transcode source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
-[b][code]transcode command:[/code][/b] [code]${command}[/code]
-[b][code]transcode toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${SCRIPT_NAME}[/code][/url]`
+  `[b][code]source:[/code][/b] [url=${formatPermalink(torrent)}][code]${torrent.format} / ${torrent.encoding}[/code][/url]
+[b][code]command:[/code][/b] [code]${command}[/code]
+[b][code]toolchain:[/code][/b] [url=https://github.com/lfence/red-trul][code]${SCRIPT_NAME}[/code][/url]`
 
 async function ensureDir(dir) {
   try {
