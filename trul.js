@@ -399,25 +399,14 @@ async function main() {
       TRANSCODE_DIR,
       formatDirname(group, torrent, RED_ENC_FLAC16),
     )
-
-    let skip = false
-    try {
-      await fs.mkdir(outDir)
-    } catch {
-      console.log(`[!] ${outDir} already exists! Delete or rename and re-run!`)
-      skip = true
-    }
-
-    if (!skip) {
-      transcodeTasks.push({
-        skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
-        outDir,
-        doTranscode: () => makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles),
-        message: formatMessage(torrent, `sox ${SOX_ARGS}`),
-        format: "FLAC",
-        bitrate: RED_ENC_FLAC16,
-      })
-    }
+    transcodeTasks.push({
+      skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
+      outDir,
+      doTranscode: () => makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles),
+      message: formatMessage(torrent, `sox ${SOX_ARGS}`),
+      format: "FLAC",
+      bitrate: RED_ENC_FLAC16,
+    })
   }
   for (const bitrate of [RED_ENC_VBRV0, RED_ENC_CBR320]) {
     const skip =
@@ -436,19 +425,11 @@ async function main() {
       continue
     }
     const outDir = path.join(TRANSCODE_DIR, dirname)
-    try {
-      await fs.mkdir(outDir)
-    } catch {
-      console.log(`[!] ${outDir} already exists! delete or rename and re-run!`)
-      continue
-    }
-
     const args = FLAC2MP3_ARGS.split(" ").map((arg) =>
       arg
         .replace("<args>", `'${LAME_ARGS[bitrate]}'`)
         .replace("<nproc>", os.cpus().length),
     )
-
     transcodeTasks.push({
       outDir,
       skipUpload: NO_UPLOAD || exists,
@@ -462,6 +443,16 @@ async function main() {
   const files = []
   for (const t of transcodeTasks) {
     const { outDir, doTranscode, message, format, bitrate, skipUpload } = t
+    try {
+      await mkdirpMaybe(outDir)
+    } catch (e) {
+      if (e.code !== 'EEXIST') {
+        console.log(`[!] mkdirp(${outDir}): ${e.code}`)
+        throw e;
+      }
+      console.log(`[!] ${outDir} already exists! Delete or rename and re-run!`)
+      continue
+    }
     console.log(`[-] Transcoding ${outDir}`)
 
     await doTranscode()
