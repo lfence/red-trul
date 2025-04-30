@@ -1,11 +1,25 @@
 #!/bin/bash
 export RED_API_KEY=...
 
+
 # 0) To run this script, in qbittorrent enable "Run external program on torrent completion" 
 # Set it to run "/home/USER/qbittorrent-postdl.sh" %I "%F" "%T" "%D"
 # 1) Add a transcode directory (e.g., "$HOME/transcodes")
 # 2) Add a torrent watch directory (e.g., "$HOME/watch_trul")
 # 4) In qbittorrent settings find "Watched Folder", add the directory from 2) and have it download to the directory from 1).
+#
+# Note by killasnake0:
+# > For anyone that wants to get the post-download hook working on Windows in WSL,
+# > there are a few minor changes to make:
+# >
+# > The hook in qB should be
+# > `wsl -e /path/to/qbittorrent-postdl.sh %I "%F" %T`
+# >
+# > Within `qbittorrent-postdl.sh` change line 18 to
+# > `INPUT=$(wslpath "$2")`
+# > and remove the & at the end of line 32
+# > `--transcode-dir="$TRANSCODE_DIR" "$INPUT"`
+#
 cd "$(dirname "$0")" # change to same dir as this script.
 
 # redirect stdout and stderr to logfile (the script prints nothing)
