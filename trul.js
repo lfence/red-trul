@@ -4,9 +4,7 @@ import { initConfig, getEnv } from "./config.js"
 import _createTorrent from "create-torrent"
 import os from "os"
 import path from "path"
-import yargs from "yargs"
 import { execFile as _execFile } from "child_process"
-import { hideBin } from "yargs/helpers"
 import { promises as fs } from "fs"
 import { promisify } from "util"
 import debug from "debug"
@@ -46,53 +44,7 @@ async function execFile(file, args, ops = {}) {
 
 const createTorrent = promisify(_createTorrent)
 
-let { argv } = yargs(hideBin(process.argv))
-  .usage("Usage: $0 [OPTIONS] flac-dir")
-  .option("info-hash", {
-    alias: "i",
-    describe:
-      "Torrent hash. Required unless an origin.yaml exists in flac-dir.",
-  })
-  .option("torrent-id", {
-    describe: "Use the given torrent id. Alternative to --info-hash.",
-  })
-  .option("api-key", {
-    describe: "'Torrents'-capable API token. env-definable as RED_API_KEY",
-  })
-  .option("torrent-dir", {
-    alias: "o",
-    describe: "Where to output torrent files",
-    default: ".",
-  })
-  .option("transcode-dir", {
-    alias: "t",
-    describe: "Output directory of transcodes",
-  })
-  .option("no-flac", {
-    describe: "Don't transcode into FLAC",
-    boolean: true,
-  })
-  .option("no-v0", {
-    describe: "Don't transcode into V0",
-    boolean: true,
-  })
-  .option("no-320", {
-    describe: "Don't transcode into 320",
-    boolean: true,
-  })
-  .option("no-upload", {
-    describe: "Don't upload anything",
-    boolean: true,
-  })
-  .option("always-transcode", {
-    boolean: true,
-    describe: "Always transcode (if tagged correctly)",
-    default: false,
-  })
-  .help("h")
-  .alias("h", "help")
 
-const CONFIG = initConfig(argv)
 const {
   ALWAYS_TRANSCODE,
   FLAC_DIR,
@@ -109,14 +61,7 @@ const {
   NO_320,
   SCRIPT_NAME,
   TORRENT_QUERY,
-} = CONFIG
-verboseLog(`${SCRIPT_NAME}! Config:`)
-verboseLog(CONFIG)
-
-if (!argv._[0]) {
-  console.error(`No input, nothing to do. Try '--help'`)
-  process.exit(1)
-}
+} = initConfig
 
 // API_KEY requires 'Torrents' permission.
 if (!API_KEY) {
