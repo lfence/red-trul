@@ -402,7 +402,11 @@ async function main() {
     transcodeTasks.push({
       skipUpload: NO_UPLOAD || encExists(RED_ENC_FLAC16, editionGroup),
       outDir,
-      doTranscode: () => makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles),
+      doTranscode: () => {
+        console.log(`[-] Resample as ${RED_ENC_FLAC16}...`)
+        return makeFlacTranscode(outDir, FLAC_DIR, analyzedFiles)
+
+      },
       message: formatMessage(torrent, `sox ${SOX_ARGS}`),
       format: "FLAC",
       bitrate: RED_ENC_FLAC16,
@@ -433,7 +437,10 @@ async function main() {
     transcodeTasks.push({
       outDir,
       skipUpload: NO_UPLOAD || exists,
-      doTranscode: () => execFile(FLAC2MP3, [...args, FLAC_DIR, outDir]),
+      doTranscode: () => {
+        console.log(`[-] Transcode mp3 ${bitrate}...`)
+        return execFile(FLAC2MP3, [...args, FLAC_DIR, outDir])
+      },
       message: formatMessage(torrent, `flac2mp3 ${args.join(" ")}`),
       format: "MP3",
       bitrate,
@@ -443,6 +450,7 @@ async function main() {
   const files = []
   for (const t of transcodeTasks) {
     const { outDir, doTranscode, message, format, bitrate, skipUpload } = t
+    console.log(`[-] output dir: ${outDir}`)
     try {
       await mkdirpMaybe(outDir)
     } catch (e) {
@@ -453,7 +461,6 @@ async function main() {
       console.log(`[!] ${outDir} already exists! Delete or rename and re-run!`)
       continue
     }
-    console.log(`[-] Transcoding ${outDir}`)
 
     await doTranscode()
     await copyOtherFiles(outDir, FLAC_DIR, torrent.media)
