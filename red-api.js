@@ -1,6 +1,5 @@
-import axios from "axios"
+import { fetch, FormData } from "undici"
 import q from "querystring"
-import FormData from "form-data"
 import he from "he"
 import path from "path"
 import { readFileSync, realpathSync } from "fs"
@@ -18,7 +17,7 @@ function decodeEntities(obj) {
   }
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "string") {
-      // on rare occasions we get double-encoded filenames like 
+      // on rare occasions we get double-encoded filenames like
       // "1 - &#10042;&amp;#120372;&#4117;&amp;#120520;&#10042;.flac"
       obj[key] = he.decode(he.decode(value))
     } else if (Array.isArray(value)) {
@@ -46,32 +45,41 @@ export default class REDAPIClient {
       ..._options,
     }
 
-    this.apiClient = axios.create({
-      baseURL: process.env.RED_API || "https://redacted.sh",
-      headers: {
-        Authorization: API_KEY,
-        "user-agent": `${pkg.name}@${pkg.version}`,
-      },
-      validateStatus: (status) => status < 500,
+    this.baseURL = process.env.RED_API || "https://redacted.sh"
+    this.defaultHeaders = {
+      Authorization: API_KEY,
+      "user-agent": `${pkg.name}@${pkg.version}`,
+    }
+    this.options = options
+  }
+
+  async _request(method, url, { headers = {}, body } = {}) {
+    const response = await fetch(this.baseURL + url, {
+      method,
+      headers: { ...this.defaultHeaders, ...headers },
+      body,
     })
 
-    this.apiClient.interceptors.response.use(function (response) {
-      if (response.data?.status !== "success") {
-        // mind that the `response` is `AxiosResponse`.
-        const { method, url } = response.config
-        throw new Error(`${method} ${url}: ${JSON.stringify(response.data)}`)
-      }
-      if (options.decodeEntities) {
-        decodeEntities(response.data)
-      }
-      return response
-    })
+    if (response.status >= 500) {
+      throw new Error(`${method} ${url}: HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    if (data?.status !== "success") {
+      throw new Error(`${method} ${url}: ${JSON.stringify(data)}`)
+    }
+
+    if (this.options.decodeEntities) {
+      decodeEntities(data)
+    }
+
+    return data
   }
 
   async index() {
-    const resp = await this.apiClient.get(`/ajax.php?action=index`)
-
-    return resp.data.response
+    const data = await this._request("GET", `/ajax.php?action=index`)
+    return data.response
   }
 
   async torrent({ id, hash }) {
@@ -85,9 +93,8 @@ export default class REDAPIClient {
     } else {
       throw new Error("args")
     }
-    const resp = await this.apiClient.get(`/ajax.php?${q.encode(query)}`)
-
-    return resp.data.response
+    const data = await this._request("GET", `/ajax.php?${q.encode(query)}`)
+    return data.response
   }
 
   async torrentgroup({ id, hash }) {
@@ -101,9 +108,8 @@ export default class REDAPIClient {
     } else {
       throw new Error("args")
     }
-    const resp = await this.apiClient.get(`/ajax.php?${q.encode(query)}`)
-
-    return resp.data.response
+    const data = await this._request("GET", `/ajax.php?${q.encode(query)}`)
+    return data.response
   }
 
   async upload(opts) {
@@ -116,18 +122,13 @@ export default class REDAPIClient {
           form.append(`${k}[]`, el)
         }
       } else if (["file_input", "extra_file_1", "extra_file_2"].includes(k)) {
-        form.append(k, v, `${k}.torrent`)
+        form.append(k, new Blob([v]), `${k}.torrent`)
       } else {
         form.append(k, v)
       }
     }
 
-    const resp = await this.apiClient.post(`/ajax.php?action=upload`, form, {
-      headers: {
-        ...form.getHeaders(),
-      },
-    })
-
-    return resp.data.response
+    const data = await this._request("POST", `/ajax.php?action=upload`, { body: form })
+    return data.response
   }
 }
