@@ -26,8 +26,8 @@
     "semi": false
   },
   "devDependencies": {
-    "@eslint/js": "^9.22.0",
-    "eslint": "^9.22.0",
-    "globals": "^16.0.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0"
   }
 }
