@@ -61,7 +61,7 @@ const {
   NO_320,
   SCRIPT_NAME,
   TORRENT_QUERY,
-} = initConfig
+} = initConfig()
 
 // API_KEY requires 'Torrents' permission.
 if (!API_KEY) {
