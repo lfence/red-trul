@@ -436,7 +436,8 @@ async function main() {
   }
 
   const uploadOpts = {
-    unknown: false, // can this be true?
+    // remasterYear MUST be set, UNLESS it's an unknown release 
+    unknown: torrent.remasterYear === 0 ? 1 : false,
     scene: false,
     groupid: group.id,
     remaster_year: torrent.remasterYear,

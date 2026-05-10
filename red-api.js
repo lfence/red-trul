@@ -67,7 +67,7 @@ export default class REDAPIClient {
     const data = await response.json()
 
     if (data?.status !== "success") {
-      throw new Error(`${method} ${url}: ${JSON.stringify(data)}`)
+      throw new Error(`${method} ${url}: ${JSON.stringify(data,null,2)}`)
     }
 
     if (this.options.decodeEntities) {
